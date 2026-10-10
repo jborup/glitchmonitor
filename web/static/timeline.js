@@ -3,7 +3,9 @@
 // The latency timeline (uPlot) and, on the same time axis below it, the strip
 // that shows which nodes answered. uPlot is vendored and loaded as a global.
 
-import { maxLatencyAt, failuresAt, nodesAt, readSecond } from './lib/series.mjs';
+import {
+  maxLatencyAt, failuresAt, allRecoveredAt, nodesAt, readSecond,
+} from './lib/series.mjs';
 import { formatClock } from './lib/format.mjs';
 
 export const HISTORY_SEC = 6 * 3600;
@@ -23,7 +25,10 @@ const TARGET_HEAD = 20;
 export function createTimeline({ chartEl, stripEl, readoutEl, source }) {
   const css = getComputedStyle(document.documentElement);
   const color = (name) => css.getPropertyValue(name).trim();
-  const ink = { text: color('--text'), muted: color('--muted'), grid: color('--border'), track: color('--track'), red: color('--red') };
+  const ink = {
+    text: color('--text'), muted: color('--muted'), grid: color('--border'), track: color('--track'),
+    red: color('--red'), yellow: color('--yellow'),
+  };
 
   let windowSec = WINDOWS[0].sec;
   let range = [0, 1];
@@ -161,12 +166,14 @@ export function createTimeline({ chartEl, stripEl, readoutEl, source }) {
     const [min, max] = range;
     const xOf = (sec) => Math.min(left + width, Math.max(left, u.valToPos(sec, 'x', true)));
 
-    const lane = (y, label, fill, minWidth, has) => {
-      ctx.fillStyle = ink.muted;
-      ctx.textAlign = 'right';
-      ctx.fillText(label, left - 6 * dpr, y + (LANE / 2) * dpr, left - 8 * dpr);
-      ctx.fillStyle = ink.track;
-      ctx.fillRect(left, y, width, LANE * dpr);
+    const lane = (y, label, fill, minWidth, has, track = true) => {
+      if (track) {
+        ctx.fillStyle = ink.muted;
+        ctx.textAlign = 'right';
+        ctx.fillText(label, left - 6 * dpr, y + (LANE / 2) * dpr, left - 8 * dpr);
+        ctx.fillStyle = ink.track;
+        ctx.fillRect(left, y, width, LANE * dpr);
+      }
       ctx.fillStyle = fill;
       let runStart = null;
       for (let sec = min; sec <= max + 1; sec++) {
@@ -192,7 +199,9 @@ export function createTimeline({ chartEl, stripEl, readoutEl, source }) {
       ctx.fillText(t.name, left + 20 * dpr, y + 10 * dpr);
       ctx.font = `${10 * dpr}px system-ui, sans-serif`;
       y += TARGET_HEAD * dpr;
-      lane(y, 'failed', ink.red, 2, (sec) => failuresAt(t.series, sec) > 0);
+      // Yellow where every failed request of that second was answered on a retry, red where not.
+      lane(y, 'failed', ink.yellow, 2, (sec) => allRecoveredAt(t.series, sec));
+      lane(y, '', ink.red, 2, (sec) => failuresAt(t.series, sec) > 0 && !allRecoveredAt(t.series, sec), false);
       for (const node of nodes) {
         y += (LANE + LANE_GAP) * dpr;
         lane(y, node.name, t.color, 1, (sec) => (nodesAt(t.series, sec) >>> node.bit) & 1);
@@ -215,7 +224,8 @@ export function createTimeline({ chartEl, stripEl, readoutEl, source }) {
       if (!r) return `${t.name}: no data`;
       const names = nodes.filter((_, bit) => (r.nodes >>> bit) & 1).sort();
       const from = names.length ? ` from ${names.join(', ')}` : '';
-      const failed = r.failures ? `, ${r.failures} failed` : '';
+      const retried = r.failures && r.recovered ? ` (${r.recovered} fine on a retry)` : '';
+      const failed = r.failures ? `, ${r.failures} failed${retried}` : '';
       return `${t.name}: ${r.answers} answered${from}${failed}`;
     });
     readoutEl.textContent = `${formatClock(sec * 1000)} · ${parts.join(' · ')}`;

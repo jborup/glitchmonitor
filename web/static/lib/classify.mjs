@@ -19,6 +19,12 @@ export function classify(outcome, slowMs) {
   return latencyMs > slowMs ? 'slow' : 'ok';
 }
 
+// failureLabel is what a failure is counted by in the log: its class, or for
+// an HTTP failure the exact status, such as "http_503".
+export function failureLabel(cls, status) {
+  return (cls === 'http_5xx' || cls === 'http_other') && status ? `http_${status}` : cls;
+}
+
 // A slow answer is still an answer; everything else counts as a failure.
 export function isFailure(cls) {
   return cls !== 'ok' && cls !== 'slow';

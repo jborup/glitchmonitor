@@ -2,7 +2,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, isFailure, tileState, CLASSES } from '../static/lib/classify.mjs';
+import { classify, isFailure, tileState, failureLabel, CLASSES } from '../static/lib/classify.mjs';
 
 const SLOW_MS = 500;
 
@@ -32,4 +32,12 @@ test('every class has a failure verdict and a tile state', () => {
   assert.deepEqual(failures, ['http_5xx', 'http_other', 'timeout', 'network_error']);
   assert.deepEqual(CLASSES.map(tileState), ['green', 'amber', 'red', 'red', 'red', 'red']);
   assert.equal(tileState(null), 'idle');
+});
+
+test('failures are counted by their exact status when there is one', () => {
+  assert.equal(failureLabel('http_5xx', 503), 'http_503');
+  assert.equal(failureLabel('http_other', 404), 'http_404');
+  assert.equal(failureLabel('http_other', 0), 'http_other');
+  assert.equal(failureLabel('timeout', undefined), 'timeout');
+  assert.equal(failureLabel('network_error', undefined), 'network_error');
 });

@@ -27,13 +27,17 @@ browser:
   intervalMs: 100
   timeoutMs: 2000
   slowMs: 500
-  failThreshold: 1
+  failThreshold: 3
   expectedReplicas: 3
   podWindowSec: 5
+  retry: true
 internal:
   intervalMs: 200
   timeoutMs: 1000
   slowMs: 200
+  failThreshold: 3
+  connectTimeoutMs: 500
+  retry: true
   targets:
     service: { enabled: true, modes: [keepalive, fresh] }
     podDirect: { enabled: true, modes: [fresh] }
@@ -144,7 +148,7 @@ func TestEnvOverridesFile(t *testing.T) {
 		"GLITCHMONITOR_EXTERNAL_ROUTE_ENABLED":   "false",
 		"GLITCHMONITOR_EXTERNAL_GATEWAY_URL":     "https://gm.gtw.other.example.com",
 		"GLITCHMONITOR_BROWSER_INTERVAL_MS":      "50",
-		"GLITCHMONITOR_BROWSER_FAIL_THRESHOLD":   "3",
+		"GLITCHMONITOR_BROWSER_FAIL_THRESHOLD":   "5",
 		"GLITCHMONITOR_INTERNAL_TIMEOUT_MS":      "750",
 		"GLITCHMONITOR_BROWSER_POD_WINDOW_SEC":   "",
 		"GLITCHMONITOR_EXTERNAL_UNKNOWN_ENABLED": "true",
@@ -164,7 +168,7 @@ func TestEnvOverridesFile(t *testing.T) {
 	if cfg.External[1].URL != "https://gm.gtw.other.example.com" {
 		t.Errorf("gateway url = %q", cfg.External[1].URL)
 	}
-	if cfg.Browser.IntervalMs != 50 || cfg.Browser.FailThreshold != 3 || cfg.Internal.TimeoutMs != 750 {
+	if cfg.Browser.IntervalMs != 50 || cfg.Browser.FailThreshold != 5 || cfg.Internal.TimeoutMs != 750 {
 		t.Errorf("browser = %+v internal = %+v", cfg.Browser, cfg.Internal)
 	}
 	if cfg.Browser.PodWindowSec != 5 {
@@ -195,6 +199,7 @@ func TestInvalid(t *testing.T) {
 		{name: "duplicate name", yaml: "external:\n  - {name: x, url: 'https://x'}\n  - {name: x, url: 'https://y'}\n", wantErr: "duplicate"},
 		{name: "bad origin", yaml: "corsAllowedOrigins: [example.com]\n", wantErr: "corsAllowedOrigins[0]"},
 		{name: "bad mode", yaml: "internal:\n  targets:\n    service: {enabled: true, modes: [pooled]}\n", wantErr: "pooled"},
+		{name: "connect timeout over the total", yaml: "internal:\n  connectTimeoutMs: 1500\n", wantErr: "connectTimeoutMs"},
 		{name: "env not int", env: map[string]string{"GLITCHMONITOR_SERVER_PORT": "http"}, wantErr: "GLITCHMONITOR_SERVER_PORT"},
 		{name: "env not duration", env: map[string]string{"GLITCHMONITOR_SERVER_SHUTDOWN_DELAY": "5"}, wantErr: "GLITCHMONITOR_SERVER_SHUTDOWN_DELAY"},
 	}

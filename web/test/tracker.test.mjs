@@ -63,9 +63,12 @@ test('failThreshold delays the outage but dates it from the first failure', () =
 
   assert.deepEqual(feed(tr, 500, ['timeout', 'timeout']), []);
   assert.deepEqual(view(tr, 700), { state: 'amber', label: 'failing', outageMs: null });
-  assert.deepEqual(feed(tr, 700, ['ok']), [], 'two failures then a success is not an outage');
+  assert.deepEqual(feed(tr, 700, ['ok']), [
+    { type: 'blip', t: 700, startedAt: 500, durationMs: 200, failures: 2, classes: { timeout: 2 } },
+  ], 'two failures then a success is a blip, not an outage');
   assert.equal(tr.counters.outages, 0);
   assert.equal(tr.counters.failures, 2);
+  assert.equal(tr.counters.downtimeMs, 0);
 
   const events = feed(tr, 800, ['timeout', 'timeout', 'timeout', 'timeout', 'ok']);
   assert.deepEqual(events, [
@@ -146,6 +149,15 @@ test('counters can be restored into a new tracker', () => {
   const tr = createTracker(OPTS, counters);
   feed(tr, 0, ['ok', 'timeout', 'ok']);
   assert.deepEqual(counters, { requests: 13, failures: 3, outages: 2, downtimeMs: 300, longestOutageMs: 200 });
+});
+
+test('failures are counted by label when one is given', () => {
+  const tr = createTracker(OPTS);
+  record(tr, { t: 0, cls: 'http_5xx', label: 'http_503', pod: null });
+  record(tr, { t: 100, cls: 'http_5xx', label: 'http_504', pod: null });
+  record(tr, { t: 200, cls: 'timeout', pod: null });
+  const [end] = record(tr, { t: 300, cls: 'ok', pod: 'pod-a' });
+  assert.deepEqual(end.classes, { http_503: 1, http_504: 1, timeout: 1 });
 });
 
 test('availability is null before any request', () => {

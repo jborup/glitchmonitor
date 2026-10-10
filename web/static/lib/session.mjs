@@ -5,13 +5,16 @@
 
 import { toCsv } from './format.mjs';
 
-export const STORAGE_VERSION = 1;
+// Bumped when saved data would no longer mean the same; older sessions are then dropped.
+export const STORAGE_VERSION = 3;
 export const MAX_LOG_ENTRIES = 5000;
 
 // A log entry is { id, type, target, start, end, durationMs, text, open }.
 //   type: 'outage' | 'degraded' | 'gap' | 'marker' | 'pod'
 //   start/end: epoch ms; point events have no end
 //   open: true while an outage, degraded period or gap is still running
+//   retries, recovered: for failed requests from outside, how many were sent
+//     once more and how many of those were then answered
 
 // restoreSession turns saved data back into a session at time now. Whatever
 // was still running when the page went away is closed at the time of the last
@@ -64,6 +67,14 @@ export function overlapsGap(log, start, end) {
   return log.some((e) => e.type === 'gap' && e.start <= end && (e.open || e.end >= start));
 }
 
+// logDetails is the text of an entry with how its retries went.
+export function logDetails(entry) {
+  const parts = [];
+  if (entry.text) parts.push(entry.text);
+  if (entry.retries) parts.push(`a retry succeeded for ${entry.recovered ?? 0} of ${entry.retries}`);
+  return parts.join('; ');
+}
+
 const iso = (ms) => (ms == null ? '' : new Date(ms).toISOString());
 
 export function logToCsv(log) {
@@ -74,7 +85,7 @@ export function logToCsv(log) {
     e.type,
     e.target ?? '',
     e.durationMs == null ? '' : Math.round(e.durationMs),
-    e.text ?? '',
+    logDetails(e),
   ]);
   return toCsv(header, rows);
 }

@@ -28,6 +28,7 @@
     <div id="dashboard" hidden>
       <section class="controls" aria-label="Controls">
         <button type="button" id="sound" aria-pressed="false">🔇 Enable sound</button>
+        <button type="button" id="flash-toggle" aria-pressed="true">⚡ Flash on</button>
         <form id="marker-form">
           <input id="marker-text" type="text" maxlength="80" autocomplete="off"
                  aria-label="Marker text" placeholder="What just happened, e.g. node2 power off">
@@ -39,29 +40,70 @@
         <button type="button" id="reset" class="danger">Reset</button>
       </section>
 
-      <section id="tiles" class="tiles" aria-label="External probe targets"></section>
+      <details class="fold" data-section="outside" open>
+        <summary><h2>From outside</h2><span id="outside-note" class="note"></span></summary>
+        <p class="sub">
+          What this browser gets through each way into the cluster. An outage here means users
+          outside are not being served.
+        </p>
+        <section id="tiles" class="tiles" aria-label="External probe targets"></section>
+      </details>
 
-      <section class="panel">
-        <header>
-          <h2>Latency timeline</h2>
-          <div id="windows" class="segmented" role="group" aria-label="Time range"></div>
+      <details id="sec-inside" class="fold panel" data-section="inside" open hidden>
+        <summary><h2>Inside the cluster</h2><span class="note"><span id="inside-chip" class="chip">–</span></span></summary>
+        <p class="sub">
+          Every pod also probes from the inside. A missing pod or node makes the inside degraded;
+          it is failing when some of the requests to the Service fail, and an outage only when no
+          pod gets an answer from the Service.
+        </p>
+        <p class="verdict-line"><span id="inside-status" class="chip">–</span> <span id="inside-reasons"></span></p>
+        <h3>Nodes</h3>
+        <ul id="inside-nodes" class="nodes"></ul>
+        <header class="row">
+          <h3>What each pod sees</h3>
+          <button type="button" id="sparks-toggle" aria-pressed="true">Mini graphs on</button>
         </header>
         <p class="sub">
-          Slowest answer in each second. Red bands are outages, grey bands are measurement gaps,
-          dashed lines are your markers.
+          One column per reporting pod. Rows from top to bottom: does the Service answer, can each
+          pod be reached directly, and the API server. A cell is one pod's own view, not a verdict
+          on the cluster. Mini graphs show the last minute: the line is the slowest answer per
+          second; a bar marks failed requests and is as tall as the share that failed, yellow
+          where a retry on a new connection succeeded and red where it did not; an amber bottom
+          edge marks time with fewer pods answering than expected.
         </p>
+        <div class="table-scroll">
+          <table id="matrix">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </details>
+
+      <details class="fold panel" data-section="timeline" open>
+        <summary><h2>Latency timeline</h2></summary>
+        <header class="row">
+          <p class="sub">
+            Slowest answer from outside in each second. Red bands are outages, grey bands are
+            measurement gaps, dashed lines are your markers.
+          </p>
+          <div id="windows" class="segmented" role="group" aria-label="Time range"></div>
+        </header>
         <div id="chart"></div>
         <h3>Who answered</h3>
         <p class="sub">
-          One lane per node for each target, filled while a pod on that node answered. A gap in a
-          lane with the others still filled is a pod or node that is away while the service stays up.
+          One lane per node for each target, filled in every second in which a pod on that node
+          answered. A gap in a lane with the others still filled is a pod or node that is away
+          while the service stays up. The "failed" lane marks every second in which a request
+          failed: yellow when each of them was answered on a retry, red when not. Red with the
+          node lanes still filled means some requests failed while others were answered; red
+          with all node lanes empty means nothing was answered.
         </p>
         <canvas id="strip"></canvas>
         <p id="strip-readout" class="sub readout"></p>
-      </section>
+      </details>
 
-      <section class="panel">
-        <header><h2>Log</h2></header>
+      <details class="fold panel" data-section="log" open>
+        <summary><h2>Log</h2><span id="log-note" class="note"></span></summary>
         <p id="log-empty" class="sub">Nothing has happened yet.</p>
         <div class="table-scroll">
           <table id="log">
@@ -72,7 +114,7 @@
           </table>
         </div>
         <p id="log-more" class="sub" hidden></p>
-      </section>
+      </details>
     </div>
 
     <details class="help">
@@ -94,13 +136,86 @@
           Every request is answered, but by fewer pods than expected. The service is up on reduced
           redundancy: this is what the replicas buy you while a node is away.
         </dd>
-        <dt class="amber">failing</dt><dd>Requests fail, but not yet enough in a row to count as an outage.</dd>
+        <dt class="amber">failing</dt>
+        <dd>
+          Requests fail, but not yet enough in a row to be an outage. If they stop failing first,
+          the log records them as failed requests: a glitch, not an outage. Failures that keep
+          coming back are one log line, from the first failed request until ten seconds have
+          passed without another; while it runs, the line shows the count so far.
+        </dd>
         <dt class="red">outage</dt>
         <dd>
-          Requests fail. An outage runs from the first failed request to the first one that is
-          answered again, so its length is known to within one probe interval. A request that
-          times out is only known to have failed once the timeout has passed, so an outage of
-          timeouts appears that much later, with its true start time.
+          Enough requests in a row have failed. An outage runs from the first failed request to
+          the first one that is answered again, so its length is known to within one probe
+          interval. A request that times out is only known to have failed once the timeout has
+          passed, so an outage of timeouts appears that much later, with its true start time.
+        </dd>
+      </dl>
+      <h3>Inside the cluster</h3>
+      <p>
+        The verdict for the inside is taken over all pods together. It is an <strong>outage</strong>
+        only when no reporting pod gets an answer from the Service; <strong>failing</strong> when
+        the Service answers but some of the requests to it fail, as in the time after a node dies
+        while the Service still sends requests to the pod that was on it;
+        <strong>degraded</strong> when something is missing but requests are answered (a pod or
+        node that is away, a pod the others cannot reach, fewer pods answering than expected); and
+        <strong>unknown</strong> when no report arrives, which is what happens when the outside is
+        down. One or two failed requests are a glitch: logged, but not a change of verdict. The node list
+        says, for each node, whether its pod reports and whether the other pods reach it; when
+        one node is down, that is where the others agree on which one.
+      </p>
+      <p>
+        The table shows what each pod measures from the inside, collected through whichever
+        external target is up. Each request from this page reaches one pod, so a pod's report is
+        normally one to three seconds old; the age is under the pod's name, in amber once it
+        passes 8 seconds. A column whose pod has not reported for 15 seconds is marked as having
+        no report; that is expected while its node is down. A cell says so, with the same limit, when its own latest
+        result is more than 8 seconds old, and its tooltip always gives that age. The pods count from their own
+        start, so their numbers begin again after a restart, and they tell more failure classes
+        apart than a browser can: <code>conn_refused</code>, <code>dns_error</code>,
+        <code>tls_error</code> and <code>other_error</code> in place of <code>network_error</code>.
+      </p>
+      <dl>
+        <dt>Service, kept-alive</dt><dd>One connection that is reused. It stays on the pod it first reached, so it shows what an established client experiences.</dd>
+        <dt>Service, new connection</dt><dd>A new connection for every request, balanced over the ready pods. Degraded when fewer pods answer than expected.</dd>
+        <dt>Pod</dt><dd>Each pod asked directly by its IP, past the Service, and whether it is a ready endpoint of the Service at that moment.</dd>
+        <dt class="red">Down, but still sent requests</dt><dd>The other pods cannot reach it, yet the Service still lists it as ready: requests keep being sent to a dead pod until the cluster notices.</dd>
+        <dt class="amber">Alive, but out of the Service</dt><dd>It answers, but is not a ready endpoint: starting up, or shutting down gracefully.</dd>
+        <dt>API server</dt>
+        <dd>
+          The API server's health endpoint through its internal Service, with a new connection
+          each time. That Service spreads requests over the API server on every control-plane
+          node, and a request cannot tell which node it was sent to. So when one control-plane
+          node is down, every pod sees some of its requests fail until the cluster stops sending
+          them there: those failures belong to the node that is down, not to the pod that counted
+          them. It does not affect the verdict for the inside.
+        </dd>
+      </dl>
+      <h3>What a failed request means for a client</h3>
+      <p>
+        The pods tell two kinds of timeout apart, because they call for different reactions.
+        Each pod also retries a failed request once, on a new connection, to show what a client
+        that retries would get; the first attempt is still what is counted as failed.
+      </p>
+      <dl>
+        <dt>timeout_connect</dt>
+        <dd>
+          The connection did not open in time, so the request was never sent. This is what a
+          node that is powered off looks like: it answers nothing at all. Nothing reached the
+          server, so sending the request again cannot do anything twice.
+        </dd>
+        <dt>timeout_response</dt>
+        <dd>
+          The request was sent and no answer came in time. The client cannot know whether the
+          server acted on it, so only a request that is safe to repeat should be sent again.
+        </dd>
+        <dt>conn_refused</dt><dd>The node is up but nothing listens: the pod is gone. Fails at once, and nothing was sent.</dd>
+        <dt>http_503 and others</dt>
+        <dd>
+          A response arrived with that exact status. From outside, the browser can only see the
+          status of a failed answer on the address this page was loaded from; a failed answer
+          from the other address lacks the permission headers and shows as
+          <code>network_error</code>.
         </dd>
       </dl>
       <h3>Why a request failed</h3>
@@ -118,7 +233,14 @@
       </dl>
       <h3>Numbers on a tile</h3>
       <dl>
-        <dt>Availability</dt><dd>The share of requests that were answered.</dd>
+        <dt>Availability</dt><dd>The share of requests that were answered at the first attempt.</dd>
+        <dt>Fine on a retry</dt>
+        <dd>
+          Of the failed requests, how many were answered when this page sent them once more
+          straight away, as a web application that retries would. The retry goes over the
+          connection the browser already has to the route or gateway; a page cannot make the
+          browser open a new one. It is the route or gateway that then picks a pod again.
+        </dd>
         <dt>Latency p50 / p99</dt><dd>Half of the answers, and 99 % of them, were at least this fast. Accurate to about 5 %.</dd>
         <dt>Measurement gap</dt>
         <dd>
@@ -151,6 +273,7 @@
         <dt class="pods-label">Pods answering</dt><dd class="pods">–</dd>
         <dt class="rule">Requests</dt><dd class="requests rule">0</dd>
         <dt>Failures</dt><dd class="failures">0</dd>
+        <dt>Fine on a retry</dt><dd class="retried">–</dd>
         <dt>Availability</dt><dd class="availability">–</dd>
         <dt>Latency p50 / p99</dt><dd class="quantiles">–</dd>
         <dt class="rule">Outages</dt><dd class="outages rule">0</dd>

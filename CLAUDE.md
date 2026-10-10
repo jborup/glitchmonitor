@@ -44,7 +44,7 @@ counters that accumulate while the page is open.
   | `GET /LICENSE` | The licence text, linked from the dashboard footer |
   | `GET /THIRD-PARTY-NOTICES` | The third-party notices and all their licence texts, linked from the footer |
   | `GET /api/ping` | `{pod, node, podIP, serverTime, seq}`; `Cache-Control: no-store`; CORS per config |
-  | `GET /api/internal` | This pod's internal probe results: ring buffer of last ~10 min plus counters per target; CORS per config |
+  | `GET /api/internal` | This pod's internal probe results: state, counters and recent incidents per target; CORS per config. The ring of raw results (last ~10 min) is only included with `?results=all` or `?since=<epoch ms>`, because it is large and the dashboard polls every second |
   | `GET /healthz` | Liveness |
   | `GET /readyz` | Readiness; returns 503 once SIGTERM is received |
 
@@ -59,6 +59,20 @@ counters that accumulate while the page is open.
   - Setting the delay to 0 must be allowed, to *demonstrate* the blips you get without it.
 
 ### Internal probes (inside every pod)
+**Code layout**
+- `internal/probe`: shared probing logic, also meant for the later headless mode: classification, the outage/degraded tracker (the same state machine as `web/static/lib/tracker.mjs`; keep the two and their tests in step), result reordering, and the probe loop.
+- `internal/kube`: in-cluster credentials and the EndpointSlice watch, over plain HTTP. **No Kubernetes client library**: it would add a large dependency tree for one list and one watch.
+- `internal/internalprobe`: the manager that runs the targets and builds the `/api/internal` report.
+- Outside a cluster (`POD_NAMESPACE` unset) no internal probes run and `/api/internal` answers 404; the dashboard then hides the internal view.
+
+**Behaviour**
+- Probes go on a fixed schedule and results are applied in send order, as in the browser.
+- Counters are per pod and start when the pod starts; they begin again after a restart.
+- "Degraded" is judged only for the Service target in `fresh` mode: a kept-alive connection stays on one pod by design.
+- A pod-direct target is retired when its IP leaves the headless Service; an outage still running then is ended with the note "the pod is gone".
+- While the API server is unreachable the last known endpoint state is kept and reported as not connected.
+
+**Targets**
 - **Service target:** `http://glitchmonitor.<ns>.svc:8080/api/ping`
 - **Pod-direct targets:**
   - Re-resolve the headless Service `glitchmonitor-peers` (with `publishNotReadyAddresses: true`) every 2s.
@@ -69,7 +83,11 @@ counters that accumulate while the page is open.
   - This is what lets the UI say "pod alive but already removed from the Service", or "pod dead but still in endpoints", the dangerous one.
 - **API server target:** `https://kubernetes.default.svc/readyz`, using the ServiceAccount token and CA.
 - **Connection mode** per target, configurable: `keepalive` (reused connection) or `fresh` (new TCP+TLS each request). Default is both for the Service target.
-- **Result classes:** `ok`, `slow` (over threshold), `http_5xx`, `http_other`, `timeout`, `conn_refused`, `dns_error`, `tls_error`, `other_error`. Each result records timestamp, latency, and which pod/node answered.
+- **Result classes:** `ok`, `slow` (over threshold), `http_5xx`, `http_other`, `timeout_connect`, `timeout_response`, `conn_refused`, `dns_error`, `tls_error`, `other_error`. Each result records timestamp, latency, the HTTP status, and which pod/node answered.
+  - **Timeouts are split by phase,** because the two call for different client reactions: `timeout_connect` means the request was never sent (a powered-off node answers nothing; a retry cannot do anything twice), `timeout_response` means it was sent and no answer came (the client cannot know whether the server acted). Every failure also records whether the request had been sent. `timeout` alone is what a browser reports, which cannot tell.
+  - `internal.connectTimeoutMs` (default 500) bounds opening the connection, TLS included; `internal.timeoutMs` bounds the whole request.
+  - **One retry** (`internal.retry`, default on): a failed probe is tried once more on a new connection, to show what a retrying client would get. The first attempt stays the result and is what counters and the state machine see; the retry's outcome is recorded beside it ("recovered").
+  - Failures are counted in the log by exact status where there is one (`http_503`), inside and outside. From outside, a failed answer from the other origin has no CORS headers, so the browser sees it as `network_error`; only the page's own origin shows its status.
 - Default interval is 200 ms per target, configurable.
 
 ### Browser (SPA)
@@ -77,9 +95,17 @@ counters that accumulate while the page is open.
 **Probing**
 - For each enabled external target from `/api/config`, `fetch()` `/api/ping` at the configured interval (default 100 ms).
 - Use `AbortController` for timeouts, `cache: 'no-store'`, `mode: 'cors'`, and `performance.now()` for timing.
+- **One retry** (`browser.retry`, default on): a failed request is sent once more straight away, to show what a web application that retries would get. The first attempt is what the counters and the state machine see, and it is handed on at once so that outage detection is not delayed; the retry's outcome is added afterwards to the tile ("Fine on a retry"), to the log entry the request belongs to, and to the timeline's "failed" lane (yellow where every failure in that second was answered on a retry, red where not). A page cannot make the browser open a new connection, so the retry goes over the existing one to the route or gateway, which then picks a pod again. Splitting timeouts by phase and retrying on a new connection from outside need the headless probe mode.
 - Classify each result as `ok`, `slow`, `http_5xx`, `http_other`, `timeout`, or `network_error`. The browser can't tell DNS, TLS and connection-refused apart; say so in the UI help text.
 - Pull `/api/internal` every 1–2 s through whichever external target is currently up, and merge the results per reporting pod.
   - If a pod's report stops updating, mark it stale. That is expected when its node dies; show it, don't hide it.
+  - Implemented as: every external target that is up is polled once a second; a pod is stale after 15 s without a report; a newer pod on the same node replaces the older one.
+  - "Inside the cluster" is laid out from most to least important: the verdict with its reasons; a line per node saying whether its pod reports and whether the others reach it (this is where the pods' agreement about a node that is down shows); then the table, a column per reporting pod (by node) and rows in a fixed order: Service with new connections, Service kept-alive, each pod, API server.
+  - A pod row carries a verdict: "down, but the Service still sends it requests" (unreachable for the others, yet a ready endpoint) or "alive, but taken out of the Service".
+  - Mini graphs in the cells (a switch, on by default) show the last minute from `?spark=60`, captioned with the two ends, e.g. "node-1 → node-3": a line for the slowest answer per second; a bar for failed requests, as tall as the share that failed, yellow where the retry succeeded and red where it did not; an amber bottom edge while that pod saw fewer pods than expected.
+  - Freshness is shown, not assumed: the report's age is under each pod's name and a cell says when its own latest result is old, both in amber past the same 8 s (lower limits were noise: reports routinely take up to 5 s); "no report" past 15 s; the tooltip always has the age.
+  - A cell's label goes by the last 10 seconds, not the latest request, so a target failing on and off reads "failing" and does not flicker to "ok". The count beside it is for the same minute as the graph; the since-start total is in the tooltip.
+  - The log gets the verdict changes ("Inside: degraded", "Inside: outage", with all reasons seen while it lasted), per-pod failed requests for the Service and API server targets, and endpoint changes. Only what happened after the page started measuring is logged. An inside outage flashes and beeps like an outside one.
 
 **Code layout**
 - Pure logic lives in `web/static/lib/*.mjs` and is unit-tested with `node --test web/test/`: classification, the outage/degraded tracker, result reordering, the latency histogram, the per-second series, formatting, and session save/restore.
@@ -90,7 +116,20 @@ counters that accumulate while the page is open.
 - Probes are sent on a fixed schedule and overlap while a target hangs, so results arrive out of order. They are fed to the state machine in **send order**; a result waits until all earlier ones are in, at most one timeout.
 - An outage runs from the send time of the first failed request to the send time of the first request answered again: accurate to one probe interval. An outage of timeouts shows up one timeout late, with its true start.
 - "Degraded" is only judged once the pod window holds at least 8 answers per expected replica, so a pod missing by chance is not reported; with fewer the UI says degraded detection is off. After an outage the pods are judged afresh.
-- An outage starts after `failThreshold` consecutive failures (default 1) and ends on the first success.
+- An outage starts after `failThreshold` consecutive failures (default 3) and ends on the first success.
+- **Failed requests are logged per episode, not per failure.** An episode starts with the first failed request and ends once 10 seconds pass without another; while it runs its log line shows the count so far, and when it ends the line carries the time span. This keeps a target that fails on and off (one dead backend out of three) to one line. The browser groups its own blips (`web/static/lib/episodes.mjs`); each pod groups all failures of an internal target into a "failing" incident (`internal/probe/target.go`). Keep the two in step.
+- **Failing first, then outage.** Fewer failures in a row than `failThreshold` are a "blip": the tile is amber "failing", the failures are counted, and the log records them as "Failed requests", not as an outage. Only outages flash and beep. Both state machines (JS and Go) emit the blip.
+
+**What counts as an outage (decided with the user, do not loosen or tighten without asking)**
+- **Outside:** an external target (route, gateway) is in outage when `failThreshold` requests in a row fail from the browser.
+- **Inside:** judged over all pods together, never from one pod's view:
+  - *ok*: every expected pod reports, they all reach each other, and the Service answers for all of them;
+  - *degraded*: something is missing (a pod or node away, a pod the others cannot reach, fewer pods answering than expected) but requests are answered. One pod left is degraded, not an outage;
+  - *failing*: the Service answers, but some requests to it fail: at least 3 failed requests in the last 10 seconds from some pod's view. This is the time after a node dies while the Service still sends requests to its pod. It ranks above degraded and below outage, and does not flash;
+  - *outage*: no reporting pod gets an answer from the Service;
+  - *unknown*: no report arrives (typically because the outside is down).
+- One pod's failed requests to the Service or the API server are logged as "Inside: failed requests" and never change the verdict. In the table a cell says "no answer" or "unreachable", not "outage".
+- The API server probe goes through the load-balanced `kubernetes` Service and cannot tell which control-plane node a request went to; it does not affect the verdict. Probing each API server instance was considered and declined (it needs RBAC in the `default` namespace).
 - "Degraded" means requests succeed but fewer distinct pods answered in the last `podWindowSec` than `expectedReplicas`. This is the "replicas=3 keeps us up" story.
 
 **UI**
@@ -99,6 +138,8 @@ counters that accumulate while the page is open.
   - Shows current latency and a running outage timer.
 - Outage start: red flash, plus a beep via the Web Audio API.
   - Sound needs a user gesture, so add a "🔊 enable sound" toggle.
+  - The flash has its own switch, on by default and remembered in the browser.
+- Every section of the page folds with `<details>`/`<summary>`, like "How to read this", and stays the way the viewer left it. A folded section still shows its state in its heading (target states, the inside verdict, the number of log entries).
 - Accumulated counters per target:
   - requests, failures, outages, longest outage, total downtime
   - availability %, p50/p99 latency
@@ -131,13 +172,17 @@ browser:
   intervalMs: 100
   timeoutMs: 2000
   slowMs: 500
-  failThreshold: 1
+  failThreshold: 3
   expectedReplicas: 3
   podWindowSec: 5
+  retry: true
 internal:
   intervalMs: 200
   timeoutMs: 1000
   slowMs: 200
+  failThreshold: 3
+  connectTimeoutMs: 500
+  retry: true
   targets:
     service: { enabled: true, modes: [keepalive, fresh] }
     podDirect: { enabled: true, modes: [fresh] }

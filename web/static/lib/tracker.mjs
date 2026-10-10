@@ -30,15 +30,19 @@ export function createTracker({ failThreshold, expectedReplicas, podWindowMs }, 
   };
 }
 
-// record applies one result { t, cls, pod } and returns the events it caused:
+// record applies one result { t, cls, pod, label } and returns the events it
+// caused. label is what failures are counted by in `classes`: the class, or
+// for an HTTP failure the exact status such as "http_503".
 //   { type: 'outage_start', t, detectedAt }
 //   { type: 'outage_end', t, startedAt, durationMs, failures, classes }
+//   { type: 'blip', t, startedAt, durationMs, failures, classes }
+//       failures that ended before there were failThreshold in a row
 //   { type: 'degraded_start', t, pods }
 //   { type: 'degraded_end', t, startedAt, durationMs }
 // An outage runs from the send time of the first failed request to the send
 // time of the first request that succeeded again, so its length is known to
 // within one probe interval.
-export function record(tr, { t, cls, pod }) {
+export function record(tr, { t, cls, pod, label = cls }) {
   const events = [];
   const c = tr.counters;
   c.requests++;
@@ -48,7 +52,7 @@ export function record(tr, { t, cls, pod }) {
     c.failures++;
     if (!tr.streak) tr.streak = { startedAt: t, failures: 0, classes: {} };
     tr.streak.failures++;
-    tr.streak.classes[cls] = (tr.streak.classes[cls] || 0) + 1;
+    tr.streak.classes[label] = (tr.streak.classes[label] || 0) + 1;
     if (tr.status !== 'outage') {
       if (tr.streak.failures >= tr.failThreshold) {
         endDegraded(tr, tr.streak.startedAt, events);
@@ -71,6 +75,9 @@ export function record(tr, { t, cls, pod }) {
     // Judge "degraded" afresh on what answers after the outage.
     tr.answers = [];
     tr.podLastSeen.clear();
+  } else if (tr.streak) {
+    const { startedAt, failures, classes } = tr.streak;
+    events.push({ type: 'blip', t, startedAt, durationMs: t - startedAt, failures, classes });
   }
   tr.streak = null;
   tr.status = 'up';

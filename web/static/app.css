@@ -10,6 +10,8 @@
   --amber: #d29922;
   --red: #f85149;
   --idle: #6e7781;
+  --orange: #f0883e;
+  --yellow: #e3b341;
   --track: #222c37;
   color-scheme: dark;
 }
@@ -75,7 +77,7 @@ h1 { margin: 0; font-size: 22px; }
 .tile h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
 .tile .here { color: var(--muted); font-size: 12px; font-weight: normal; }
 
-.badge {
+.tile .badge {
   padding: 2px 10px;
   border-radius: 999px;
   background: var(--state);
@@ -206,6 +208,91 @@ button.danger:hover { border-color: var(--red); }
 #log tr[data-type="gap"] { --type: var(--idle); }
 #log tr[data-type="marker"] { --type: var(--text); }
 #log tr[data-type="pod"] td { color: var(--muted); }
+
+#matrix { width: 100%; border-collapse: collapse; font-size: 14px; }
+#matrix th, #matrix td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  font-weight: normal;
+}
+#matrix thead th { border-bottom-color: var(--muted); }
+#matrix .from { display: block; color: var(--text); font-weight: 600; }
+#matrix .detail { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+#matrix .verdict { display: block; margin-top: 2px; font-size: 13px; font-weight: 600; }
+#matrix .verdict.red { color: var(--red); }
+#matrix .verdict.amber { color: var(--amber); }
+#matrix td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#matrix td .detail { white-space: normal; }
+#matrix td.none { color: var(--muted); }
+#matrix td[data-state="red"] { background: color-mix(in srgb, var(--red) 14%, transparent); }
+#matrix .stale { opacity: 0.45; }
+#matrix th.stale { opacity: 1; }
+#matrix th.stale .from { color: var(--muted); }
+#matrix th.stale .age, #matrix th.old .age, #matrix .detail.old { color: var(--amber); font-weight: 600; }
+#log tr[data-type="endpoint"] td { color: var(--muted); }
+
+/* Sections fold like "How to read this". */
+.fold { margin-top: 16px; }
+.fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: "▸"; color: var(--muted); width: 1em; font-size: 18px; }
+.fold[open] > summary::before { content: "▾"; }
+.fold > summary h2 { margin: 0; font-size: 18px; }
+.fold > summary .note { color: var(--muted); font-size: 13px; }
+.fold[open] > summary { margin-bottom: 8px; }
+.panel > header.row, .fold > header.row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.fold > header.row h3 { margin: 0; }
+.fold > header.row .sub { margin: 0; flex: 1 1 300px; }
+
+.chip {
+  display: inline-block;
+  min-width: 4.5em;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--state, var(--idle));
+  color: #0f1419;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+[data-state="green"] { --state: var(--green); }
+[data-state="amber"] { --state: var(--amber); }
+[data-state="orange"] { --state: var(--orange); }
+[data-state="red"] { --state: var(--red); }
+[data-state="idle"] { --state: var(--idle); }
+
+.verdict-line { margin: 8px 0; font-size: 15px; }
+.verdict-line .chip { font-size: 14px; padding: 2px 12px; text-transform: uppercase; }
+.nodes { margin: 6px 0 0; padding: 0; list-style: none; font-size: 14px; }
+.nodes li { padding: 3px 0; }
+
+.spark { display: block; margin-top: 4px; background: var(--track); border-radius: 2px; }
+.spark .line { fill: none; stroke: var(--text); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.spark .fail { fill: var(--red); }
+.spark .retried { fill: var(--yellow); }
+.spark .deg { fill: var(--amber); }
+#matrix .pair { font-size: 11px; }
+#log tr[data-type="blip"] { --type: var(--amber); }
+#log tr[data-type="internal-requests"] td { color: var(--muted); }
+#log tr[data-type="internal-requests"] { --type: var(--idle); }
+#log tr[data-type="internal-failing"] { --type: var(--orange); }
+#log tr[data-type="internal-outage"] { --type: var(--red); }
+#log tr[data-type="internal-degraded"] { --type: var(--amber); }
 
 .legal { margin-top: 32px; color: var(--muted); font-size: 12px; }
 .legal a { color: inherit; }

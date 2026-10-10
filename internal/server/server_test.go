@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"glitchmonitor/internal/config"
+	"glitchmonitor/internal/internalprobe"
+	"glitchmonitor/internal/probe"
 )
 
 const (
@@ -118,6 +120,75 @@ func TestAboutAndLicense(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Third-party notices") {
 		t.Errorf("notices body = %q", rec.Body.String())
+	}
+}
+
+type fakeInternal struct {
+	withResults bool
+	since       time.Time
+}
+
+func (f *fakeInternal) Report(withResults bool, since time.Time) internalprobe.Report {
+	f.withResults, f.since = withResults, since
+	return internalprobe.Report{Pod: "glitchmonitor-abc", Targets: []internalprobe.TargetReport{{ID: "service/fresh"}}}
+}
+
+func (f *fakeInternal) Sparks(seconds int) map[string]probe.Spark {
+	return map[string]probe.Spark{"service/fresh": {Start: 1, LatencyMs: make([]float64, seconds), Failures: make([]int, seconds)}}
+}
+
+func TestInternalEndpoint(t *testing.T) {
+	s := newTestServer(nil)
+	h := s.Handler()
+	if rec := do(h, "GET", "/api/internal", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("without internal probes: status = %d, want 404", rec.Code)
+	}
+
+	fake := &fakeInternal{}
+	s.Internal = fake
+	rec := do(h, "GET", "/api/internal", map[string]string{"Origin": gtwOrigin})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != gtwOrigin {
+		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, gtwOrigin)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q", got)
+	}
+	var report internalprobe.Report
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Pod != "glitchmonitor-abc" || len(report.Targets) != 1 {
+		t.Errorf("report = %+v", report)
+	}
+	if fake.withResults {
+		t.Error("raw results must not be included by default")
+	}
+
+	do(h, "GET", "/api/internal?results=all", nil)
+	if !fake.withResults || !fake.since.IsZero() {
+		t.Errorf("results=all: withResults=%v since=%v", fake.withResults, fake.since)
+	}
+	do(h, "GET", "/api/internal?since=1767322445000", nil)
+	if !fake.withResults || fake.since.UnixMilli() != 1767322445000 {
+		t.Errorf("since: withResults=%v since=%v", fake.withResults, fake.since)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil || report.Sparks != nil {
+		t.Errorf("sparks included without being asked for: %v %v", report.Sparks, err)
+	}
+	rec = do(h, "GET", "/api/internal?spark=60", nil)
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil || len(report.Sparks["service/fresh"].LatencyMs) != 60 {
+		t.Errorf("spark=60: %+v %v", report.Sparks, err)
+	}
+	for _, bad := range []string{"0", "601", "many"} {
+		if rec := do(h, "GET", "/api/internal?spark="+bad, nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("spark=%s: status = %d, want 400", bad, rec.Code)
+		}
+	}
+	if rec := do(h, "GET", "/api/internal?since=yesterday", nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad since: status = %d, want 400", rec.Code)
 	}
 }
 

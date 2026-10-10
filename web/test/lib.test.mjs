@@ -4,11 +4,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createReorder } from '../static/lib/reorder.mjs';
 import { createHistogram, addValue, quantile } from '../static/lib/histogram.mjs';
-import { createSeries, addSample, readSecond } from '../static/lib/series.mjs';
+import { createSeries, addSample, addRecovered, allRecoveredAt, readSecond } from '../static/lib/series.mjs';
 import {
   formatDuration, formatLatency, formatPercent, summariseClasses, toCsv,
 } from '../static/lib/format.mjs';
-import { restoreSession, trimLog, overlapsGap, logToCsv, STORAGE_VERSION } from '../static/lib/session.mjs';
+import { createEpisodes, addBurst, settle, EPISODE_QUIET_MS } from '../static/lib/episodes.mjs';
+import {
+  restoreSession, trimLog, overlapsGap, logToCsv, logDetails, STORAGE_VERSION,
+} from '../static/lib/session.mjs';
 
 test('reorder delivers results in send order', () => {
   const got = [];
@@ -52,10 +55,22 @@ test('series keeps per-second maximum latency, failures and answering nodes', ()
   addSample(s, 100, { latencyMs: 40, nodeIndex: 2 });
   addSample(s, 100, { latencyMs: 8, nodeIndex: 0 });
   addSample(s, 100, { latencyMs: null, nodeIndex: -1 });
-  assert.deepEqual(readSecond(s, 100), { maxLatency: 40, answers: 3, failures: 1, nodes: 0b101 });
+  assert.deepEqual(readSecond(s, 100), { maxLatency: 40, answers: 3, failures: 1, recovered: 0, nodes: 0b101 });
 
   addSample(s, 101, { latencyMs: null, nodeIndex: -1 });
-  assert.deepEqual(readSecond(s, 101), { maxLatency: null, answers: 0, failures: 1, nodes: 0 });
+  assert.deepEqual(readSecond(s, 101), { maxLatency: null, answers: 0, failures: 1, recovered: 0, nodes: 0 });
+
+  // A retry that succeeded is added later, to the second its request failed in.
+  addSample(s, 101, { latencyMs: null, nodeIndex: -1 });
+  assert.equal(allRecoveredAt(s, 101), false);
+  addRecovered(s, 101);
+  assert.equal(allRecoveredAt(s, 101), false, 'one of two failures recovered');
+  addRecovered(s, 101);
+  assert.equal(allRecoveredAt(s, 101), true);
+  assert.equal(readSecond(s, 101).recovered, 2);
+  assert.equal(allRecoveredAt(s, 100), false);
+  assert.equal(allRecoveredAt(s, 55), false, 'a second without failures has nothing to recover');
+  addRecovered(s, 77); // a second the ring no longer holds: ignored
 });
 
 test('series overwrites the oldest second once the ring is full', () => {
@@ -63,7 +78,7 @@ test('series overwrites the oldest second once the ring is full', () => {
   addSample(s, 100, { latencyMs: 5, nodeIndex: 1 });
   addSample(s, 110, { latencyMs: 9, nodeIndex: 31 });
   assert.equal(readSecond(s, 100), null);
-  assert.deepEqual(readSecond(s, 110), { maxLatency: 9, answers: 1, failures: 0, nodes: 0x80000000 });
+  assert.deepEqual(readSecond(s, 110), { maxLatency: 9, answers: 1, failures: 0, recovered: 0, nodes: 0x80000000 });
 });
 
 test('formatting', () => {
@@ -99,6 +114,15 @@ test('log export as csv', () => {
     '2026-01-02T03:05:00.000Z,,marker,,,"node2 ""power off"", hard"',
     '',
   ].join('\r\n'));
+});
+
+test('log details say how the retries went', () => {
+  assert.equal(logDetails({ text: '3 failed requests: timeout ×3' }), '3 failed requests: timeout ×3');
+  assert.equal(logDetails({ text: '3 failed requests: timeout ×3', retries: 3, recovered: 2 }),
+    '3 failed requests: timeout ×3; a retry succeeded for 2 of 3');
+  assert.equal(logDetails({ text: '', retries: 1, recovered: 1 }), 'a retry succeeded for 1 of 1');
+  const csv = logToCsv([{ id: 1, type: 'blip', target: 'route', start: 0, end: 1000, durationMs: 1000, text: 'x', retries: 2, recovered: 2 }]);
+  assert.ok(csv.includes('x; a retry succeeded for 2 of 2'));
 });
 
 test('restoring a session closes what was running and logs the reload as a gap', () => {
@@ -172,4 +196,33 @@ test('overlapsGap', () => {
   assert.equal(overlapsGap(log, 201, 400), false);
   assert.equal(overlapsGap(log, 500, 600), false);
   assert.equal(overlapsGap(log, 950, 1000), true);
+});
+
+test('failures that keep coming back are one episode until it has been quiet', () => {
+  const holder = createEpisodes();
+  const burst = (startedAt, failures, cls = 'timeout') => ({ startedAt, t: startedAt + failures * 100, failures, classes: { [cls]: failures } });
+
+  assert.deepEqual(addBurst(holder, burst(1000, 1)), { opened: true, closed: null });
+  assert.deepEqual(addBurst(holder, burst(1500, 2)), { opened: false, closed: null });
+  assert.deepEqual(addBurst(holder, burst(9000, 1, 'http_5xx')), { opened: false, closed: null });
+  assert.deepEqual(holder.current, {
+    start: 1000, end: 9100, failures: 4, bursts: 3, classes: { timeout: 3, http_5xx: 1 },
+  });
+
+  // Not quiet for long enough yet, then it is.
+  assert.equal(settle(holder, 9100 + EPISODE_QUIET_MS), null);
+  const ended = settle(holder, 9100 + EPISODE_QUIET_MS + 1);
+  assert.equal(ended.end, 9100);
+  assert.equal(ended.failures, 4);
+  assert.equal(holder.current, null);
+  assert.equal(settle(holder, 1e9), null);
+});
+
+test('a burst after the quiet time ends the old episode and starts a new one', () => {
+  const holder = createEpisodes();
+  addBurst(holder, { startedAt: 1000, t: 1100, failures: 1, classes: { timeout: 1 } });
+  const { opened, closed } = addBurst(holder, { startedAt: 50_000, t: 50_200, failures: 2, classes: { timeout: 2 } });
+  assert.equal(opened, true);
+  assert.deepEqual(closed, { start: 1000, end: 1100, failures: 1, bursts: 1, classes: { timeout: 1 } });
+  assert.deepEqual(holder.current, { start: 50_000, end: 50_200, failures: 2, bursts: 1, classes: { timeout: 2 } });
 });

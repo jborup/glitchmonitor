@@ -54,6 +54,9 @@ type Browser struct {
 	FailThreshold    int `yaml:"failThreshold" json:"failThreshold"`
 	ExpectedReplicas int `yaml:"expectedReplicas" json:"expectedReplicas"`
 	PodWindowSec     int `yaml:"podWindowSec" json:"podWindowSec"`
+	// Retry makes the browser send a failed request once more, to show what a
+	// web application that retries would get. The first attempt is what counts.
+	Retry bool `yaml:"retry" json:"retry"`
 }
 
 type InternalTarget struct {
@@ -68,10 +71,16 @@ type InternalTargets struct {
 }
 
 type Internal struct {
-	IntervalMs int             `yaml:"intervalMs" json:"intervalMs"`
-	TimeoutMs  int             `yaml:"timeoutMs" json:"timeoutMs"`
-	SlowMs     int             `yaml:"slowMs" json:"slowMs"`
-	Targets    InternalTargets `yaml:"targets" json:"targets"`
+	IntervalMs    int `yaml:"intervalMs" json:"intervalMs"`
+	TimeoutMs     int `yaml:"timeoutMs" json:"timeoutMs"`
+	SlowMs        int `yaml:"slowMs" json:"slowMs"`
+	FailThreshold int `yaml:"failThreshold" json:"failThreshold"`
+	// ConnectTimeoutMs bounds opening the connection; TimeoutMs bounds the whole request.
+	ConnectTimeoutMs int `yaml:"connectTimeoutMs" json:"connectTimeoutMs"`
+	// Retry makes a failed probe try once more on a new connection, to show
+	// what a client that retries would get. The first attempt is what counts.
+	Retry   bool            `yaml:"retry" json:"retry"`
+	Targets InternalTargets `yaml:"targets" json:"targets"`
 }
 
 type Server struct {
@@ -94,14 +103,18 @@ func Default() *Config {
 			IntervalMs:       100,
 			TimeoutMs:        2000,
 			SlowMs:           500,
-			FailThreshold:    1,
+			FailThreshold:    3,
 			ExpectedReplicas: 3,
 			PodWindowSec:     5,
+			Retry:            true,
 		},
 		Internal: Internal{
-			IntervalMs: 200,
-			TimeoutMs:  1000,
-			SlowMs:     200,
+			IntervalMs:       200,
+			TimeoutMs:        1000,
+			SlowMs:           200,
+			FailThreshold:    3,
+			ConnectTimeoutMs: 500,
+			Retry:            true,
 			Targets: InternalTargets{
 				Service:   InternalTarget{Enabled: true, Modes: []string{"keepalive", "fresh"}},
 				PodDirect: InternalTarget{Enabled: true, Modes: []string{"fresh"}},
@@ -204,9 +217,13 @@ func applyEnv(cfg *Config, getenv func(string) string) error {
 	setInt("BROWSER_FAIL_THRESHOLD", &cfg.Browser.FailThreshold)
 	setInt("BROWSER_EXPECTED_REPLICAS", &cfg.Browser.ExpectedReplicas)
 	setInt("BROWSER_POD_WINDOW_SEC", &cfg.Browser.PodWindowSec)
+	setBool("BROWSER_RETRY", &cfg.Browser.Retry)
 	setInt("INTERNAL_INTERVAL_MS", &cfg.Internal.IntervalMs)
 	setInt("INTERNAL_TIMEOUT_MS", &cfg.Internal.TimeoutMs)
 	setInt("INTERNAL_SLOW_MS", &cfg.Internal.SlowMs)
+	setInt("INTERNAL_FAIL_THRESHOLD", &cfg.Internal.FailThreshold)
+	setInt("INTERNAL_CONNECT_TIMEOUT_MS", &cfg.Internal.ConnectTimeoutMs)
+	setBool("INTERNAL_RETRY", &cfg.Internal.Retry)
 	return errors.Join(errs...)
 }
 
@@ -254,15 +271,17 @@ func (c *Config) normalize() error {
 	}
 
 	positive := map[string]int{
-		"browser.intervalMs":       c.Browser.IntervalMs,
-		"browser.timeoutMs":        c.Browser.TimeoutMs,
-		"browser.slowMs":           c.Browser.SlowMs,
-		"browser.failThreshold":    c.Browser.FailThreshold,
-		"browser.expectedReplicas": c.Browser.ExpectedReplicas,
-		"browser.podWindowSec":     c.Browser.PodWindowSec,
-		"internal.intervalMs":      c.Internal.IntervalMs,
-		"internal.timeoutMs":       c.Internal.TimeoutMs,
-		"internal.slowMs":          c.Internal.SlowMs,
+		"browser.intervalMs":        c.Browser.IntervalMs,
+		"browser.timeoutMs":         c.Browser.TimeoutMs,
+		"browser.slowMs":            c.Browser.SlowMs,
+		"browser.failThreshold":     c.Browser.FailThreshold,
+		"browser.expectedReplicas":  c.Browser.ExpectedReplicas,
+		"browser.podWindowSec":      c.Browser.PodWindowSec,
+		"internal.intervalMs":       c.Internal.IntervalMs,
+		"internal.timeoutMs":        c.Internal.TimeoutMs,
+		"internal.slowMs":           c.Internal.SlowMs,
+		"internal.failThreshold":    c.Internal.FailThreshold,
+		"internal.connectTimeoutMs": c.Internal.ConnectTimeoutMs,
 	}
 	for name, v := range positive {
 		if v <= 0 {
@@ -278,6 +297,9 @@ func (c *Config) normalize() error {
 				bad("internal.targets.%s.modes: unknown mode %q (want keepalive or fresh)", name, m)
 			}
 		}
+	}
+	if c.Internal.ConnectTimeoutMs > c.Internal.TimeoutMs {
+		bad("internal.connectTimeoutMs (%d) must not be greater than internal.timeoutMs (%d)", c.Internal.ConnectTimeoutMs, c.Internal.TimeoutMs)
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		bad("server.port %d is out of range", c.Server.Port)

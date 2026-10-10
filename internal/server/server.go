@@ -13,15 +13,21 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"sync/atomic"
 	"time"
 
 	"glitchmonitor/internal/config"
+	"glitchmonitor/internal/internalprobe"
+	"glitchmonitor/internal/probe"
 )
 
 // shutdownTimeout bounds http.Server.Shutdown. Together with the default
 // shutdownDelay it stays well inside terminationGracePeriodSeconds: 30.
 const shutdownTimeout = 10 * time.Second
+
+// maxSparkSeconds is as far back as the internal probes remember.
+const maxSparkSeconds = 600
 
 // Identity is who this pod is, from the Downward API.
 type Identity struct {
@@ -41,12 +47,21 @@ type About struct {
 	ThirdParty []byte `json:"-"`
 }
 
+// InternalReporter is the internal probes of this pod; see internalprobe.Manager.
+type InternalReporter interface {
+	Report(withResults bool, since time.Time) internalprobe.Report
+	Sparks(seconds int) map[string]probe.Spark
+}
+
 type Server struct {
 	cfg    *config.Config
 	id     Identity
 	about  About
 	static fs.FS
 	log    *slog.Logger
+
+	// Internal is nil when this process runs no internal probes, as it does outside a cluster.
+	Internal InternalReporter
 
 	seq         atomic.Uint64
 	terminating atomic.Bool
@@ -60,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/config", s.handleConfig)
 	api.HandleFunc("GET /api/ping", s.handlePing)
+	api.HandleFunc("GET /api/internal", s.handleInternal)
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", s.cors(api))
@@ -101,6 +117,38 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		external = []config.External{}
 	}
 	writeJSON(w, http.StatusOK, configResponse{External: external, Browser: s.cfg.Browser, About: s.about})
+}
+
+// handleInternal reports what this pod's internal probes see. The ring of raw
+// results is large, so it is only included on request: ?results=all for all
+// of it, or ?since=<epoch ms> for the results sent after that time.
+// ?spark=<seconds> adds a small per-second history for mini graphs.
+func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request) {
+	if s.Internal == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this process runs no internal probes"})
+		return
+	}
+	q := r.URL.Query()
+	withResults := q.Get("results") == "all"
+	var since time.Time
+	if v := q.Get("since"); v != "" {
+		ms, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "since must be a time in epoch milliseconds"})
+			return
+		}
+		withResults, since = true, time.UnixMilli(ms)
+	}
+	report := s.Internal.Report(withResults, since)
+	if v := q.Get("spark"); v != "" {
+		seconds, err := strconv.Atoi(v)
+		if err != nil || seconds < 1 || seconds > maxSparkSeconds {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "spark must be a number of seconds from 1 to 600"})
+			return
+		}
+		report.Sparks = s.Internal.Sparks(seconds)
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {

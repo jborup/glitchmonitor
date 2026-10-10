@@ -14,13 +14,17 @@ browser:
   intervalMs: 100
   timeoutMs: 2000
   slowMs: 500
-  failThreshold: 1
+  failThreshold: 3
   expectedReplicas: 3
   podWindowSec: 5
+  retry: true
 internal:
   intervalMs: 200
   timeoutMs: 1000
   slowMs: 200
+  failThreshold: 3
+  connectTimeoutMs: 500
+  retry: true
   targets:
     service: { enabled: true, modes: [keepalive, fresh] }
     podDirect: { enabled: true, modes: [fresh] }

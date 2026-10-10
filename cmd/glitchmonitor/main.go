@@ -17,6 +17,8 @@ import (
 
 	"glitchmonitor"
 	"glitchmonitor/internal/config"
+	"glitchmonitor/internal/internalprobe"
+	"glitchmonitor/internal/kube"
 	"glitchmonitor/internal/server"
 	"glitchmonitor/web"
 )
@@ -107,9 +109,46 @@ func serve(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	about := server.About{
+	srv := server.New(cfg, id, server.About{
 		Version: version, SourceURL: sourceURL,
 		License: glitchmonitor.License, ThirdParty: glitchmonitor.ThirdPartyNotices(),
+	}, static, log)
+	if id.Namespace != "" {
+		srv.Internal = startInternalProbes(ctx, cfg, id, log)
+	} else {
+		log.Info("POD_NAMESPACE is not set: not in a cluster, so no internal probes")
 	}
-	return server.New(cfg, id, about, static, log).Run(ctx, ln)
+	return srv.Run(ctx, ln)
+}
+
+// The names the manifests give the two Services; the internal probes address them.
+const (
+	serviceName      = "glitchmonitor"
+	peersServiceName = "glitchmonitor-peers"
+)
+
+func startInternalProbes(ctx context.Context, cfg *config.Config, id server.Identity, log *slog.Logger) *internalprobe.Manager {
+	port := strconv.Itoa(cfg.Server.Port)
+	opts := internalprobe.Options{
+		Config:     cfg,
+		Pod:        id.Pod,
+		Node:       id.Node,
+		PodIP:      id.PodIP,
+		ServiceURL: fmt.Sprintf("http://%s.%s.svc:%s/api/ping", serviceName, id.Namespace, port),
+		PeersHost:  fmt.Sprintf("%s.%s.svc", peersServiceName, id.Namespace),
+		PodURL:     func(ip string) string { return "http://" + net.JoinHostPort(ip, port) + "/api/ping" },
+		Log:        log,
+	}
+	api, err := kube.LoadInCluster()
+	if err != nil {
+		log.Warn("no API server access: no API server probe and no endpoint tagging", "error", err.Error())
+	} else {
+		opts.APIServer = api
+		endpoints := kube.NewEndpoints(api, id.Namespace, serviceName, log)
+		go endpoints.Run(ctx)
+		opts.Endpoints = endpoints
+	}
+	m := internalprobe.New(opts)
+	go m.Run(ctx)
+	return m
 }
