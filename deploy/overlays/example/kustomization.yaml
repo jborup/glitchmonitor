@@ -17,7 +17,7 @@ components:
 images:
   - name: glitchmonitor
     newName: registry.example.com/glitchmonitor
-    newTag: "0.1.2"
+    newTag: "0.2.2"
 
 configMapGenerator:
   - name: glitchmonitor-config

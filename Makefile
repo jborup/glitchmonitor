@@ -4,7 +4,7 @@
 -include local.mk
 
 REGISTRY  ?= registry.example.com
-VERSION   ?= 0.1.2
+VERSION   ?= 0.2.2
 # Where users of the image can get its source (AGPL section 13). Change it when you build a modified version.
 SOURCE_URL ?= https://github.com/jborup/glitchmonitor
 LDFLAGS   = -s -w -X main.version=$(VERSION) -X main.sourceURL=$(SOURCE_URL)

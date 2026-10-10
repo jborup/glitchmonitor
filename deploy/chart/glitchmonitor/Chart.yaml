@@ -4,6 +4,6 @@ apiVersion: v2
 name: glitchmonitor
 description: Shows live in a browser whether an OpenShift cluster has any service disruption during maintenance.
 type: application
-version: 0.1.2
+version: 0.2.2
 # Also the default image tag.
-appVersion: "0.1.2"
+appVersion: "0.2.2"

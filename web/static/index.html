@@ -5,37 +5,125 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>glitchmonitor</title>
+  <link rel="stylesheet" href="vendor/uplot/uPlot.min.css">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
-  <header>
+  <div id="flash" aria-hidden="true"></div>
+
+  <header class="top">
     <h1>glitchmonitor</h1>
     <p class="origin">Page loaded from <code id="origin"></code></p>
+    <p id="since" class="origin"></p>
   </header>
+
+  <div id="banner" class="banner" role="alert" hidden>
+    <span id="banner-text"></span>
+    <button type="button" id="banner-dismiss">Dismiss</button>
+  </div>
 
   <main>
     <p id="status" class="status" role="status">Loading configuration…</p>
-    <section id="tiles" class="tiles" aria-label="External probe targets"></section>
+
+    <div id="dashboard" hidden>
+      <section class="controls" aria-label="Controls">
+        <button type="button" id="sound" aria-pressed="false">🔇 Enable sound</button>
+        <form id="marker-form">
+          <input id="marker-text" type="text" maxlength="80" autocomplete="off"
+                 aria-label="Marker text" placeholder="What just happened, e.g. node2 power off">
+          <button type="submit">Add marker</button>
+        </form>
+        <span class="spacer"></span>
+        <button type="button" id="export-csv">Export log (CSV)</button>
+        <button type="button" id="export-json">Export all (JSON)</button>
+        <button type="button" id="reset" class="danger">Reset</button>
+      </section>
+
+      <section id="tiles" class="tiles" aria-label="External probe targets"></section>
+
+      <section class="panel">
+        <header>
+          <h2>Latency timeline</h2>
+          <div id="windows" class="segmented" role="group" aria-label="Time range"></div>
+        </header>
+        <p class="sub">
+          Slowest answer in each second. Red bands are outages, grey bands are measurement gaps,
+          dashed lines are your markers.
+        </p>
+        <div id="chart"></div>
+        <h3>Who answered</h3>
+        <p class="sub">
+          One lane per node for each target, filled while a pod on that node answered. A gap in a
+          lane with the others still filled is a pod or node that is away while the service stays up.
+        </p>
+        <canvas id="strip"></canvas>
+        <p id="strip-readout" class="sub readout"></p>
+      </section>
+
+      <section class="panel">
+        <header><h2>Log</h2></header>
+        <p id="log-empty" class="sub">Nothing has happened yet.</p>
+        <div class="table-scroll">
+          <table id="log">
+            <thead>
+              <tr><th>Time</th><th>What</th><th>Target</th><th>Duration</th><th>Details</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="log-more" class="sub" hidden></p>
+      </section>
+    </div>
 
     <details class="help">
       <summary>How to read this</summary>
       <p>
-        This browser requests <code>/api/ping</code> on every target at a fixed interval and
-        shows the latest answer. Nothing is stored on the server: all counters live in this
-        page, so keep it open and do not reload during a test.
+        This browser requests <code>/api/ping</code> on every target at a fixed interval. Nothing
+        is stored on the server: all timers and counters live in this page, so keep it open and
+        visible, and do not reload during a test. The log and the counters are also saved in this
+        browser every few seconds, so an accidental reload loses the timeline but not the numbers.
       </p>
+      <p id="thresholds"></p>
+      <p id="degraded-off" class="warn" hidden></p>
+      <h3>Tile states</h3>
       <dl>
-        <dt class="green">ok</dt><dd>Answered in time.</dd>
+        <dt class="green">ok</dt><dd>Answered in time, by all the pods that are expected.</dd>
         <dt class="amber">slow</dt><dd>Answered, but slower than the slow threshold.</dd>
-        <dt class="red">http_5xx</dt><dd>A 5xx status, usually from the router or gateway when it has no healthy backend.</dd>
-        <dt class="red">http_other</dt><dd>Any other unexpected answer.</dd>
-        <dt class="red">timeout</dt><dd>No answer within the timeout.</dd>
-        <dt class="red">network_error</dt>
+        <dt class="amber">degraded</dt>
+        <dd>
+          Every request is answered, but by fewer pods than expected. The service is up on reduced
+          redundancy: this is what the replicas buy you while a node is away.
+        </dd>
+        <dt class="amber">failing</dt><dd>Requests fail, but not yet enough in a row to count as an outage.</dd>
+        <dt class="red">outage</dt>
+        <dd>
+          Requests fail. An outage runs from the first failed request to the first one that is
+          answered again, so its length is known to within one probe interval. A request that
+          times out is only known to have failed once the timeout has passed, so an outage of
+          timeouts appears that much later, with its true start time.
+        </dd>
+      </dl>
+      <h3>Why a request failed</h3>
+      <dl>
+        <dt>http_5xx</dt><dd>A 5xx status, usually from the router or gateway when it has no healthy backend.</dd>
+        <dt>http_other</dt><dd>Any other unexpected answer.</dd>
+        <dt>timeout</dt><dd>No answer within the timeout.</dd>
+        <dt>network_error</dt>
         <dd>
           The request failed before any HTTP answer arrived. A browser cannot tell DNS failures,
           TLS failures, refused or reset connections and CORS rejections apart, so they all
           appear as this one class. If a target shows only <code>network_error</code> from the
           start, open its URL in a new tab once: an untrusted certificate fails this way.
+        </dd>
+      </dl>
+      <h3>Numbers on a tile</h3>
+      <dl>
+        <dt>Availability</dt><dd>The share of requests that were answered.</dd>
+        <dt>Latency p50 / p99</dt><dd>Half of the answers, and 99 % of them, were at least this fast. Accurate to about 5 %.</dd>
+        <dt>Measurement gap</dt>
+        <dd>
+          Time when this page could not measure properly: the tab was in the background, the
+          computer slept, or the page was reloaded. Outages that overlap a gap say so in the log.
         </dd>
       </dl>
     </details>
@@ -44,7 +132,8 @@
   <footer class="legal">
     <span id="version">glitchmonitor</span> ·
     Copyright © 2026 Jørgen Borup, trading as JB Consulting ·
-    Free software under the <a href="LICENSE">GNU AGPL, version 3 or later</a>, with no warranty
+    Free software under the <a href="LICENSE">GNU AGPL, version 3 or later</a>, with no warranty ·
+    <a href="THIRD-PARTY-NOTICES">Third-party licences</a>
     <span id="source-offer" hidden>· <a id="source" rel="noopener">Source code</a></span>
   </footer>
 
@@ -59,13 +148,20 @@
       <dl>
         <dt>Answered by</dt><dd class="pod">–</dd>
         <dt>Node</dt><dd class="node">–</dd>
-        <dt>Requests</dt><dd class="requests">0</dd>
+        <dt class="pods-label">Pods answering</dt><dd class="pods">–</dd>
+        <dt class="rule">Requests</dt><dd class="requests rule">0</dd>
         <dt>Failures</dt><dd class="failures">0</dd>
+        <dt>Availability</dt><dd class="availability">–</dd>
+        <dt>Latency p50 / p99</dt><dd class="quantiles">–</dd>
+        <dt class="rule">Outages</dt><dd class="outages rule">0</dd>
+        <dt>Longest outage</dt><dd class="longest">–</dd>
+        <dt>Total downtime</dt><dd class="downtime">–</dd>
         <dt>Last failure</dt><dd class="last-failure">none</dd>
       </dl>
     </article>
   </template>
 
+  <script src="vendor/uplot/uPlot.iife.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

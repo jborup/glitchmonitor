@@ -37,6 +37,8 @@ type About struct {
 	Version   string `json:"version"`
 	SourceURL string `json:"sourceURL"`
 	License   []byte `json:"-"`
+	// ThirdParty is the notices and licence texts of the components the app includes.
+	ThirdParty []byte `json:"-"`
 }
 
 type Server struct {
@@ -63,7 +65,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/", s.cors(api))
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
-	mux.HandleFunc("GET /LICENSE", s.handleLicense)
+	mux.HandleFunc("GET /LICENSE", s.plainText(s.about.License))
+	mux.HandleFunc("GET /THIRD-PARTY-NOTICES", s.plainText(s.about.ThirdParty))
 	mux.Handle("/", s.staticFiles())
 	return s.closeWhenTerminating(mux)
 }
@@ -112,11 +115,13 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	writeText(w, http.StatusOK, "ok\n")
 }
 
-func (s *Server) handleLicense(w http.ResponseWriter, r *http.Request) {
-	h := w.Header()
-	h.Set("Content-Type", "text/plain; charset=utf-8")
-	h.Set("Cache-Control", "no-cache")
-	w.Write(s.about.License)
+func (s *Server) plainText(text []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+		h.Set("Cache-Control", "no-cache")
+		w.Write(text)
+	}
 }
 
 func (s *Server) staticFiles() http.Handler {

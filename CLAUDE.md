@@ -42,6 +42,7 @@ counters that accumulate while the page is open.
   | `GET /` | Embedded SPA |
   | `GET /api/config` | Probe targets and thresholds for the browser (from config), plus `about`: version and source URL |
   | `GET /LICENSE` | The licence text, linked from the dashboard footer |
+  | `GET /THIRD-PARTY-NOTICES` | The third-party notices and all their licence texts, linked from the footer |
   | `GET /api/ping` | `{pod, node, podIP, serverTime, seq}`; `Cache-Control: no-store`; CORS per config |
   | `GET /api/internal` | This pod's internal probe results: ring buffer of last ~10 min plus counters per target; CORS per config |
   | `GET /healthz` | Liveness |
@@ -80,7 +81,15 @@ counters that accumulate while the page is open.
 - Pull `/api/internal` every 1–2 s through whichever external target is currently up, and merge the results per reporting pod.
   - If a pod's report stops updating, mark it stale. That is expected when its node dies; show it, don't hide it.
 
+**Code layout**
+- Pure logic lives in `web/static/lib/*.mjs` and is unit-tested with `node --test web/test/`: classification, the outage/degraded tracker, result reordering, the latency histogram, the per-second series, formatting, and session save/restore.
+- `app.js` (probing, tiles, log, controls, storage) and `timeline.js` (uPlot chart and node strip) hold everything that touches the DOM.
+- uPlot 1.6.32 is vendored unmodified in `web/static/vendor/uplot/` with its licence, and loaded as a global script.
+
 **Outage logic**
+- Probes are sent on a fixed schedule and overlap while a target hangs, so results arrive out of order. They are fed to the state machine in **send order**; a result waits until all earlier ones are in, at most one timeout.
+- An outage runs from the send time of the first failed request to the send time of the first request answered again: accurate to one probe interval. An outage of timeouts shows up one timeout late, with its true start.
+- "Degraded" is only judged once the pod window holds at least 8 answers per expected replica, so a pod missing by chance is not reported; with fewer the UI says degraded detection is off. After an outage the pods are judged afresh.
 - An outage starts after `failThreshold` consecutive failures (default 1) and ends on the first success.
 - "Degraded" means requests succeed but fewer distinct pods answered in the last `podWindowSec` than `expectedReplicas`. This is the "replicas=3 keeps us up" story.
 
@@ -94,10 +103,14 @@ counters that accumulate while the page is open.
   - requests, failures, outages, longest outage, total downtime
   - availability %, p50/p99 latency
 - Latency timeline (uPlot) with outage bands, and a pod/node strip showing who answered over time.
+  - The timeline holds the slowest answer per second for the last 6 hours, in memory only; it is not saved and is lost on reload.
+  - The strip has one lane per node for each target, plus a "failed" lane. Lanes are per node, not per pod, because pod names change on every rollout; new pods are announced in the log.
+  - Colours: the series colours identify targets and were checked for colour-blind separation; green, amber and red are reserved for state.
 - **Event markers:** a button plus a text field ("MCP rollout start", "node2 power off") that draws a vertical line on the timeline and appears in the log.
 - Outage/event log table; export as CSV and JSON.
 - Save counters and log to `localStorage` periodically so an accidental reload doesn't lose everything. Add a reset button.
 - If `document.visibilityState` becomes hidden, show a warning banner and record a "measurement gap", since browsers throttle timers in background tabs.
+  - Timers that stall while the tab is visible (sleep, overloaded browser) and page reloads are logged as measurement gaps too.
 - Show which origin the SPA itself was loaded from.
 - A small footer with the legal notice: version, copyright, AGPL with a link to `/LICENSE`, no warranty, and a "Source code" link. Keep it small, but never remove it (see Licence).
 
@@ -210,7 +223,7 @@ Rules:
 ## Licence
 - AGPL-3.0-or-later (`LICENSE`), with commercial licences from the Stewards (`COMMERCIAL-LICENSING.md`) and a CLA for contributions (`CLA.md`, `CONTRIBUTING.md`).
 - **Every source file starts with `SPDX-License-Identifier: AGPL-3.0-or-later`** as a comment: Go, JS, CSS, HTML (after the doctype), YAML manifests, the Makefile and the Containerfile. In Go, leave a blank line after it. No copyright line per file.
-- Vendored third-party files (e.g. uPlot) keep their own licence header and are not relicensed; dependencies must be AGPL-compatible. The image carries the licence texts under `/licenses`, third-party ones under `/licenses/third_party`; add each new dependency's there in the Containerfile.
+- Vendored third-party files (e.g. uPlot) keep their own licence header and are not relicensed; dependencies must be AGPL-compatible. **Every third-party component is listed in `THIRD-PARTY-NOTICES.md` with its licence file in the repository:** Go modules under `third_party/licenses/<module path with dashes>/`, vendored frontend code next to it in `web/static/vendor/<name>/LICENSE`, and the Go runtime's in `third_party/licenses/go/`. `make test` fails when a module in `go.mod` or a directory under `web/static/vendor` is missing from the notices or has no licence file. The app serves the notices and all licence texts at `/THIRD-PARTY-NOTICES` (linked from the footer), and the image carries them under `/licenses`.
 - **The running app offers its licence and source (AGPL sections 5 and 13):** the dashboard footer shows the copyright, the licence with a link to `/LICENSE` (embedded in the binary), a no-warranty note and a link to the source. The source URL is built in with `-X main.sourceURL` (`SOURCE_URL` in the Makefile); whoever runs a modified build must point it at their own source.
 - **Commit messages end with `Assisted-by: Claude (Anthropic)`, never `Co-Authored-By:`** for an AI tool: a tool is not an author and cannot agree to the CLA (see "AI-assisted contributions" in `CONTRIBUTING.md`).
 - The README (M4) gets a "Licence" section pointing at these files.

@@ -107,6 +107,9 @@ func serve(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	about := server.About{Version: version, SourceURL: sourceURL, License: glitchmonitor.License}
+	about := server.About{
+		Version: version, SourceURL: sourceURL,
+		License: glitchmonitor.License, ThirdParty: glitchmonitor.ThirdPartyNotices(),
+	}
 	return server.New(cfg, id, about, static, log).Run(ctx, ln)
 }

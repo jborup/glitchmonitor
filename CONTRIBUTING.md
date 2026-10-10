@@ -58,6 +58,10 @@ Only submit code you have the right to submit. If your change includes code
 from another project, identify it and its licence in the pull request. The
 licence must be compatible with AGPL-3.0-or-later.
 
+A new dependency, whether a Go module or vendored frontend code, gets an entry
+in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and its licence file in the
+repository, as described there. `make test` fails without them.
+
 ## AI-assisted contributions
 
 glitchmonitor is developed with the help of AI coding tools, and you may use
