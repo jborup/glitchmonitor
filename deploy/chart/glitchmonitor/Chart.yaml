@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: v2
+name: glitchmonitor
+description: Shows live in a browser whether an OpenShift cluster has any service disruption during maintenance.
+type: application
+version: 0.1.2
+# Also the default image tag.
+appVersion: "0.1.2"

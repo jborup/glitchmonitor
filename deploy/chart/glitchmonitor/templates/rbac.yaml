@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: glitchmonitor
+  labels:
+    {{- include "glitchmonitor.labels" . | nindent 4 }}
+---
+# Lets each pod tag its pod-direct probe results with "in endpoints: yes/no".
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: glitchmonitor
+  labels:
+    {{- include "glitchmonitor.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: glitchmonitor
+  labels:
+    {{- include "glitchmonitor.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: glitchmonitor
+subjects:
+  - kind: ServiceAccount
+    name: glitchmonitor
+    namespace: {{ .Release.Namespace }}

@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: glitchmonitor
+
+resources:
+  - ../../base
+
+# Enable either or both ways in. When you drop one, also remove its patch
+# below and its entries in config.yaml.
+components:
+  - ../../components/route
+  - ../../components/httproute
+
+images:
+  - name: glitchmonitor
+    newName: registry.example.com/glitchmonitor
+    newTag: "0.1.2"
+
+configMapGenerator:
+  - name: glitchmonitor-config
+    behavior: replace
+    files:
+      - config.yaml
+
+patches:
+  - target: { kind: Route, name: glitchmonitor }
+    patch: |-
+      - op: replace
+        path: /spec/host
+        value: glitchmonitor.apps.example.com
+  - target: { kind: HTTPRoute, name: glitchmonitor }
+    patch: |-
+      - op: replace
+        path: /spec/parentRefs/0/name
+        value: example-gateway
+      - op: replace
+        path: /spec/parentRefs/0/namespace
+        value: openshift-ingress
+      - op: replace
+        path: /spec/hostnames/0
+        value: glitchmonitor.gtw.example.com
+  # If the Gateway only admits routes from labelled namespaces, add its label:
+  # - target: { kind: Namespace, name: glitchmonitor }
+  #   patch: |-
+  #     - op: add
+  #       path: /metadata/labels/gateway-access
+  #       value: allowed

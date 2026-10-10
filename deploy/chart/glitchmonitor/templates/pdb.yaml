@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# With one pod per node on 3 nodes, a drained pod stays Pending and this
+# blocks a second drain until the first node is back.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: glitchmonitor
+  labels:
+    {{- include "glitchmonitor.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "glitchmonitor.selectorLabels" . | nindent 6 }}

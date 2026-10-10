@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The chart renders the same objects as deploy/overlays (kustomize); `make test`
+# checks that. Object names are fixed, so install it once per namespace.
+
+image:
+  repository: registry.example.com/glitchmonitor
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Used to build the default hostnames below.
+clusterDomain: example.com
+
+# The two ways in. Enable either or both; each enabled one becomes a probe
+# target and an allowed CORS origin in the app's config.
+route:
+  enabled: true
+  # Defaults to glitchmonitor.apps.<clusterDomain>.
+  host: ""
+httproute:
+  enabled: true
+  # Defaults to glitchmonitor.gtw.<clusterDomain>.
+  host: ""
+  # The existing Gateway to attach to. If it only admits labelled namespaces,
+  # label the release namespace yourself; the chart does not own the namespace.
+  gateway:
+    name: example-gateway
+    namespace: openshift-ingress
+
+# Further origins allowed to probe /api/ping across origins.
+extraCorsAllowedOrigins: []
+
+replicas: 3
+pdb:
+  minAvailable: 2
+
+resources:
+  requests: { cpu: 20m, memory: 32Mi }
+  limits: { memory: 128Mi }
+
+# Passed through to the app's config.yaml.
+config:
+  browser:
+    intervalMs: 100
+    timeoutMs: 2000
+    slowMs: 500
+    failThreshold: 1
+    expectedReplicas: 3
+    podWindowSec: 5
+  internal:
+    intervalMs: 200
+    timeoutMs: 1000
+    slowMs: 200
+    targets:
+      service: { enabled: true, modes: [keepalive, fresh] }
+      podDirect: { enabled: true, modes: [fresh] }
+      apiserver: { enabled: true }
+  server:
+    port: 8080
+    shutdownDelay: 5s

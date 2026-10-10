@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: glitchmonitor
+  labels:
+    app.kubernetes.io/name: glitchmonitor
+  annotations:
+    # No sticky-session cookie: every request must be free to land on any pod.
+    haproxy.router.openshift.io/disable_cookies: "true"
+spec:
+  # Patch in the overlay.
+  host: glitchmonitor.apps.CLUSTER_DOMAIN
+  to:
+    kind: Service
+    name: glitchmonitor
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

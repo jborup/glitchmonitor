@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Example Argo CD Application that installs the Helm chart. Set repoURL and
+# targetRevision to where this repository lives, and the values to your cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: glitchmonitor
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.com/glitchmonitor.git
+    targetRevision: main
+    path: deploy/chart/glitchmonitor
+    helm:
+      valuesObject:
+        image:
+          repository: registry.example.com/glitchmonitor
+        clusterDomain: example.com
+        httproute:
+          gateway:
+            name: example-gateway
+            namespace: openshift-ingress
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: glitchmonitor
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    # The chart does not own the namespace. If the Gateway only admits
+    # labelled namespaces, Argo CD sets the label here.
+    managedNamespaceMetadata:
+      labels:
+        gateway-access: allowed

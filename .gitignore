@@ -1,0 +1,8 @@
+/bin/
+
+# Settings for a real cluster stay local; only the example is committed.
+/local.mk
+/deploy/overlays/*
+!/deploy/overlays/example/
+/deploy/values/*
+!/deploy/values/example.yaml

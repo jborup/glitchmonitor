@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Helm values matching deploy/overlays/example. Copy this file and that
+# overlay under your cluster's name to make your own pair; `make test` checks
+# that every overlay and its values file render the same objects.
+image:
+  repository: registry.example.com/glitchmonitor
+clusterDomain: example.com
+httproute:
+  gateway:
+    name: example-gateway
+    namespace: openshift-ingress

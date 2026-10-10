@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: glitchmonitor-config
+  labels:
+    {{- include "glitchmonitor.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- include "glitchmonitor.config" . | nindent 4 }}

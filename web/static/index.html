@@ -1,0 +1,71 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>glitchmonitor</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header>
+    <h1>glitchmonitor</h1>
+    <p class="origin">Page loaded from <code id="origin"></code></p>
+  </header>
+
+  <main>
+    <p id="status" class="status" role="status">Loading configuration…</p>
+    <section id="tiles" class="tiles" aria-label="External probe targets"></section>
+
+    <details class="help">
+      <summary>How to read this</summary>
+      <p>
+        This browser requests <code>/api/ping</code> on every target at a fixed interval and
+        shows the latest answer. Nothing is stored on the server: all counters live in this
+        page, so keep it open and do not reload during a test.
+      </p>
+      <dl>
+        <dt class="green">ok</dt><dd>Answered in time.</dd>
+        <dt class="amber">slow</dt><dd>Answered, but slower than the slow threshold.</dd>
+        <dt class="red">http_5xx</dt><dd>A 5xx status, usually from the router or gateway when it has no healthy backend.</dd>
+        <dt class="red">http_other</dt><dd>Any other unexpected answer.</dd>
+        <dt class="red">timeout</dt><dd>No answer within the timeout.</dd>
+        <dt class="red">network_error</dt>
+        <dd>
+          The request failed before any HTTP answer arrived. A browser cannot tell DNS failures,
+          TLS failures, refused or reset connections and CORS rejections apart, so they all
+          appear as this one class. If a target shows only <code>network_error</code> from the
+          start, open its URL in a new tab once: an untrusted certificate fails this way.
+        </dd>
+      </dl>
+    </details>
+  </main>
+
+  <footer class="legal">
+    <span id="version">glitchmonitor</span> ·
+    Copyright © 2026 Jørgen Borup, trading as JB Consulting ·
+    Free software under the <a href="LICENSE">GNU AGPL, version 3 or later</a>, with no warranty
+    <span id="source-offer" hidden>· <a id="source" rel="noopener">Source code</a></span>
+  </footer>
+
+  <template id="tile-template">
+    <article class="tile" data-state="idle">
+      <header>
+        <h2 class="name"></h2>
+        <span class="badge">waiting</span>
+      </header>
+      <a class="url" target="_blank" rel="noopener"></a>
+      <p class="latency"><span class="value">–</span><span class="unit">ms</span></p>
+      <dl>
+        <dt>Answered by</dt><dd class="pod">–</dd>
+        <dt>Node</dt><dd class="node">–</dd>
+        <dt>Requests</dt><dd class="requests">0</dd>
+        <dt>Failures</dt><dd class="failures">0</dd>
+        <dt>Last failure</dt><dd class="last-failure">none</dd>
+      </dl>
+    </article>
+  </template>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

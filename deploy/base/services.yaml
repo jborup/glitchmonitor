@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: glitchmonitor
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Headless and including not-ready pods: each pod resolves this to find its
+# peers and probe them directly, whether or not they are still in the Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: glitchmonitor-peers
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

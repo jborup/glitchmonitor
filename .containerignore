@@ -1,0 +1,4 @@
+bin/
+deploy/
+.git/
+local.mk

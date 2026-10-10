@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Base config: no external targets, so the SPA probes whichever origin it was
+# loaded from. Overlays replace this file with the real hostnames.
+external: []
+corsAllowedOrigins: []
+browser:
+  intervalMs: 100
+  timeoutMs: 2000
+  slowMs: 500
+  failThreshold: 1
+  expectedReplicas: 3
+  podWindowSec: 5
+internal:
+  intervalMs: 200
+  timeoutMs: 1000
+  slowMs: 200
+  targets:
+    service: { enabled: true, modes: [keepalive, fresh] }
+    podDirect: { enabled: true, modes: [fresh] }
+    apiserver: { enabled: true }
+server:
+  port: 8080
+  shutdownDelay: 5s

@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: glitchmonitor
+  labels:
+    {{- include "glitchmonitor.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "glitchmonitor.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Headless and including not-ready pods: each pod resolves this to find its
+# peers and probe them directly, whether or not they are still in the Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: glitchmonitor-peers
+  labels:
+    {{- include "glitchmonitor.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "glitchmonitor.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

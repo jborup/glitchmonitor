@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: glitchmonitor
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: glitchmonitor
+    includeSelectors: true
+
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - deployment.yaml
+  - services.yaml
+  - pdb.yaml
+
+# The generated name carries a content hash, so a config change rolls the pods.
+configMapGenerator:
+  - name: glitchmonitor-config
+    files:
+      - config.yaml
