@@ -9,3 +9,6 @@
 
 # The static demo site built by `make demo-site`.
 /_site/
+
+# macOS Finder metadata
+.DS_Store

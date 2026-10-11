@@ -75,11 +75,9 @@ These are properties of how that cluster was set up, not verdicts on the product
 
 ## Try it without a cluster
 
-<!-- Quick try, once the demo site is published (see .github/workflows/demo.yaml); remove this comment's markers then:
 **In your browser, nothing to install:** [open the node power-off recording](https://jborup.github.io/glitchmonitor/) on the hosted demo. Drag across the chart to pick a stretch of time.
--->
 
-The two recordings above are built into the app, with the node names replaced. Build it, start it, and open them:
+**Or run it yourself.** The two recordings above are built into the app, with the node names replaced. Build it, start it, and open them:
 
 ```sh
 make build
