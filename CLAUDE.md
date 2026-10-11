@@ -248,6 +248,12 @@ Rules:
 4. **M4:** README with the demo script below, plus tuning notes.
 5. **Later:** headless `glitchmonitor probe` mode writing NDJSON, and a small report generator.
 
+### To do, not yet scheduled
+Ideas agreed as worth doing; decide per item whether it joins M4 or comes later.
+- **Custom time range for the timeline:** any span from 30 seconds to 6 hours, beside the fixed 5 min / 30 min / 3 h / 6 h buttons. Beyond 6 hours can come later, since the timeline only keeps 6 hours.
+- **Open a previous run:** load a JSON export and show how that run went, as a read-only view of the dashboard. Today's export holds the log, the counters and the config but not the per-second data behind the timeline and the "Who answered" strip, so the export has to carry that too before a past run can be shown in full.
+- **Keep listening after a browser timeout:** count the request as timed out as now, but let it run on for up to 30 seconds and record what eventually came back (status and time), to see what the route or gateway would have answered. Proposed, not yet decided.
+
 ## Demo script (for README)
 1. **Baseline:** 5 minutes idle, everything green.
 2. **Rolling restart:** `oc rollout restart deploy/glitchmonitor`. Compare `shutdownDelay` 0s with 5s.
