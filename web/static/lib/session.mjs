@@ -10,7 +10,8 @@ export const STORAGE_VERSION = 3;
 export const MAX_LOG_ENTRIES = 5000;
 
 // A log entry is { id, type, target, start, end, durationMs, text, open }.
-//   type: 'outage' | 'degraded' | 'gap' | 'marker' | 'pod'
+//   type: 'outage' | 'degraded' | 'gap' | 'marker' | 'pod' | 'note' and the inside ones;
+//         a note is text for the log only and is not drawn on the timeline
 //   start/end: epoch ms; point events have no end
 //   open: true while an outage, degraded period or gap is still running
 //   retries, recovered: for failed requests from outside, how many were sent

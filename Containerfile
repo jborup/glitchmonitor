@@ -11,6 +11,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY LICENSE THIRD-PARTY-NOTICES.md license.go ./
 COPY third_party ./third_party
+COPY docs/demo ./docs/demo
 COPY cmd ./cmd
 COPY internal ./internal
 COPY web ./web

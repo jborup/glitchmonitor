@@ -4,7 +4,7 @@
 -include local.mk
 
 REGISTRY  ?= registry.example.com
-VERSION   ?= 0.7.1
+VERSION   ?= 0.7.2
 # Where users of the image can get its source (AGPL section 13). Change it when you build a modified version.
 SOURCE_URL ?= https://github.com/jborup/glitchmonitor
 LDFLAGS   = -s -w -X main.version=$(VERSION) -X main.sourceURL=$(SOURCE_URL)
@@ -13,7 +13,7 @@ PLATFORM  ?= linux/amd64
 CONTAINER ?= podman
 OVERLAY   ?= example
 
-.PHONY: build test image push deploy
+.PHONY: build test image push deploy demo-site
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/glitchmonitor ./cmd/glitchmonitor
@@ -33,3 +33,13 @@ push:
 # The image deployed is the one named in deploy/overlays/$(OVERLAY)/kustomization.yaml.
 deploy:
 	oc apply -k deploy/overlays/$(OVERLAY)
+
+# The saved-run view with the sample runs as plain files, for static hosting such
+# as GitHub Pages. Opening the site shows docs/demo/node-power-off.json.
+demo-site:
+	rm -rf _site && mkdir -p _site/demo
+	cp -R web/static/. _site/
+	cp docs/demo/*.json _site/demo/
+	cp LICENSE _site/LICENSE
+	go run ./cmd/glitchmonitor notices > _site/THIRD-PARTY-NOTICES
+	sed -i.bak 's|<meta name="glitchmonitor-source"|<meta name="glitchmonitor-demo" content="demo/node-power-off.json">\n  <meta name="glitchmonitor-source"|' _site/index.html && rm _site/index.html.bak

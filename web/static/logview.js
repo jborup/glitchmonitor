@@ -12,6 +12,7 @@ export const LOG_TYPES = {
   degraded: 'Degraded',
   gap: 'Measurement gap',
   marker: 'Marker',
+  note: 'Note',
   pod: 'New pod',
   blip: 'Failed requests',
   'internal-outage': 'Inside: outage',
@@ -43,7 +44,7 @@ export function renderLog(log, t) {
       span ? `${formatClock(e.start)} – ${formatClock(e.end)}` : formatClock(e.start),
       LOG_TYPES[e.type] ?? e.type,
       e.target ?? '',
-      e.type === 'marker' || e.type === 'pod' || e.type === 'endpoint' ? '' : duration,
+      e.type === 'marker' || e.type === 'note' || e.type === 'pod' || e.type === 'endpoint' ? '' : duration,
       logDetails(e),
     ];
     for (const text of cells) tr.append(Object.assign(document.createElement('td'), { textContent: text }));

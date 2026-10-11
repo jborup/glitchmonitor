@@ -9,7 +9,7 @@ import {
   formatDuration, formatLatency, formatPercent, formatDateTime, summariseClasses, toCsv,
 } from '../static/lib/format.mjs';
 import {
-  packSeries, unpackSeries, parseSpan, clampSpan, formatSpan, readExport, MIN_SPAN_SEC, MAX_SPAN_SEC,
+  packSeries, unpackSeries, parseSpan, clampSpan, formatSpan, readExport, samplePath, MIN_SPAN_SEC, MAX_SPAN_SEC,
 } from '../static/lib/savedrun.mjs';
 import { createEpisodes, addBurst, settle, EPISODE_QUIET_MS } from '../static/lib/episodes.mjs';
 import {
@@ -293,4 +293,13 @@ test('reading an export says what can be shown from it', () => {
   const full = readExport({ ...base, targets: [{ name: 'route', series: { start: 1, maxLatency: [] } }] });
   assert.equal(full.hasSeries, true);
   assert.match(readExport({ ...base, startedAt: 'never', targets: [] }).error, /start and end time/);
+});
+
+test('a run named in the link must be a plain relative json path', () => {
+  assert.equal(samplePath('demo/node-power-off.json'), 'demo/node-power-off.json');
+  assert.equal(samplePath(' run-1.json '), 'run-1.json');
+  for (const bad of ['', null, 'https://example.com/x.json', '//example.com/x.json', '/etc/x.json', '../x.json',
+    'runs/../../x.json', 'runs//x.json', 'runs/x.txt', 'javascript:alert(1)//.json', 'runs/x.json?y=1']) {
+    assert.equal(samplePath(bad), null, String(bad));
+  }
 });

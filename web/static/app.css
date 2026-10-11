@@ -207,6 +207,7 @@ button.danger:hover { border-color: var(--red); }
 #log tr[data-type="degraded"] { --type: var(--amber); }
 #log tr[data-type="gap"] { --type: var(--idle); }
 #log tr[data-type="marker"] { --type: var(--text); }
+#log tr[data-type="note"] { --type: #58a6ff; }
 #log tr[data-type="pod"] td { color: var(--muted); }
 
 #matrix { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -316,6 +317,7 @@ a.button:hover { border-color: var(--muted); }
 .saved-open { margin: 0 0 16px; }
 .saved-open h2 { margin: 0; font-size: 18px; }
 .saved-open input { margin: 8px 0; color: var(--text); }
+.saved-open a { color: var(--text); }
 .sub.error { color: var(--red); }
 .sub.warn { color: var(--amber); }
 

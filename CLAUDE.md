@@ -152,6 +152,9 @@ counters that accumulate while the page is open.
   - A marker is an ordinary log entry of type `marker` with a start time and a text, and is part of the export. So markers can also be added to an export afterwards, for example the exact times a test script powered a node off and on, and the saved-run view draws them like any other. Marker texts that would overlap are stacked on up to six rows.
 - Outage/event log table; export as CSV and JSON.
   - **The JSON export is a complete record of a run** (`format: 2`): config, totals, the log, the node names, and per target the per-second data behind the timeline and the strip (slowest answer, answers, failures, retries that helped, which nodes answered).
+  - The two sample runs in `docs/demo/` are built into the binary and served under `/demo/`; the saved-run page links to them, and each starts with a log entry of type `note` saying that it is a demo sample and not a live measurement.
+  - `?saved=<path>` opens a run straight away from a `.json` file on the same site (a plain relative path only, so a link cannot make the page fetch from elsewhere). This is what a link to a recording uses.
+  - **The demo site:** `make demo-site` builds `_site/`, the dashboard's static files plus `docs/demo/`, the licence and the notices; opened without a query it goes to the node power-off recording. `.github/workflows/demo.yaml` publishes it to GitHub Pages and only runs when started by hand. Served as plain files there is no server to ask, so the footer's source link falls back to the address in the page's `glitchmonitor-source` meta tag.
   - **"Open a saved run"** opens the page with `?saved` in a new tab, so a running measurement is not disturbed. That view takes an export (file picker or drop), never probes or stores anything, and shows the run's totals, timeline, strip and log (`saved.js`). An export from before format 2 shows its totals and log only, and says so. The inside view is a now-view and is not part of a saved run; its log entries are.
 - Save counters and log to `localStorage` periodically so an accidental reload doesn't lose everything. Add a reset button.
 - If `document.visibilityState` becomes hidden, show a warning banner and record a "measurement gap", since browsers throttle timers in background tabs.
@@ -256,7 +259,14 @@ Rules:
 Ideas agreed as worth doing; decide per item whether it joins M4 or comes later.
 - **Keep listening after a browser timeout:** count the request as timed out as now, but let it run on for up to 30 seconds and record what eventually came back (status and time), to see what the route or gateway would have answered. Proposed, not yet decided.
 
+## README and docs
+- `README.md` is short and leads with what the tool does; the measured findings come second, as examples, with the caveat that they reflect one lab cluster's setup and are not verdicts on products.
+- Details live in `docs/`: `deploy.md`, `running-a-test.md` (the demo script), `failed-requests.md`, `tuning.md`.
+- The film at the top of the README is made by scripts (kept locally, not in the repository) that drive a browser through a fixed storyboard over a real recording; a click on it jumps to "Try it without a cluster".
+- `docs/demo/*.json` are real recordings made anonymous (hostnames to `example.com`, node names to `node-N`, pod address ranges replaced); `docs/images/` are captured from those files with the saved-run view, never from a live cluster, so no picture shows a real name. Every number in the README comes from a recording.
+
 ## Demo script (for README)
+Now in `docs/running-a-test.md`; keep the two in step.
 1. **Baseline:** 5 minutes idle, everything green.
 2. **Rolling restart:** `oc rollout restart deploy/glitchmonitor`. Compare `shutdownDelay` 0s with 5s.
 3. **Drain one node:** `oc adm drain <node> --ignore-daemonsets --delete-emptydir-data`. Watch the pod go Pending and traffic shift to 2 pods. Then `oc adm uncordon`.
@@ -279,7 +289,7 @@ Ideas agreed as worth doing; decide per item whether it joins M4 or comes later.
 - Vendored third-party files (e.g. uPlot) keep their own licence header and are not relicensed; dependencies must be AGPL-compatible. **Every third-party component is listed in `THIRD-PARTY-NOTICES.md` with its licence file in the repository:** Go modules under `third_party/licenses/<module path with dashes>/`, vendored frontend code next to it in `web/static/vendor/<name>/LICENSE`, and the Go runtime's in `third_party/licenses/go/`. `make test` fails when a module in `go.mod` or a directory under `web/static/vendor` is missing from the notices or has no licence file. The app serves the notices and all licence texts at `/THIRD-PARTY-NOTICES` (linked from the footer), and the image carries them under `/licenses`.
 - **The running app offers its licence and source (AGPL sections 5 and 13):** the dashboard footer shows the copyright, the licence with a link to `/LICENSE` (embedded in the binary), a no-warranty note and a link to the source. The source URL is built in with `-X main.sourceURL` (`SOURCE_URL` in the Makefile); whoever runs a modified build must point it at their own source.
 - **Commit messages end with `Assisted-by: Claude (Anthropic)`, never `Co-Authored-By:`** for an AI tool: a tool is not an author and cannot agree to the CLA (see "AI-assisted contributions" in `CONTRIBUTING.md`).
-- The README (M4) gets a "Licence" section pointing at these files.
+- The README has a "Licence" section pointing at these files.
 
 ## Non-goals
 - No authentication; this is a demo app. Keep it internal.

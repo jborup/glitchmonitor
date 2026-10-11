@@ -19,6 +19,21 @@ var License []byte
 //go:embed THIRD-PARTY-NOTICES.md third_party/licenses web/static/vendor/*/LICENSE*
 var thirdParty embed.FS
 
+// The demo samples: two recordings from a lab cluster, made anonymous, that the
+// saved-run view can open without a file.
+//
+//go:embed docs/demo/*.json
+var sampleRuns embed.FS
+
+// SampleRuns returns the sample runs as a file system with the .json files at its root.
+func SampleRuns() fs.FS {
+	runs, err := fs.Sub(sampleRuns, "docs/demo")
+	if err != nil {
+		panic(err) // embedded at build time
+	}
+	return runs
+}
+
 // ThirdPartyNotices returns one plain-text document: the list of third-party
 // components followed by the full text of each of their licence files.
 func ThirdPartyNotices() []byte {

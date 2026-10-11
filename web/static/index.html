@@ -5,6 +5,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>glitchmonitor</title>
+  <!-- Where the source of this page is, for when it is served as plain files with no
+       server to ask. Anyone publishing a modified version must point this at theirs. -->
+  <meta name="glitchmonitor-source" content="https://github.com/jborup/glitchmonitor">
   <link rel="stylesheet" href="vendor/uplot/uPlot.min.css">
   <link rel="stylesheet" href="app.css">
 </head>
@@ -32,6 +35,11 @@
         anywhere on this page. Nothing is measured in this view and the file stays in your browser.
       </p>
       <input id="saved-file" type="file" accept="application/json,.json" aria-label="Exported run">
+      <p class="sub">
+        Or open a sample recording from a three-node lab cluster:
+        <a href="?saved=demo/node-power-off.json">three nodes powered off</a>,
+        <a href="?saved=demo/rolling-update.json">a rolling update of every node</a>.
+      </p>
       <p id="saved-note" class="sub"></p>
       <p id="saved-no-series" class="sub warn" hidden>
         This export was made before exports carried the per-second data, so its timeline cannot

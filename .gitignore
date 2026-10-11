@@ -6,3 +6,6 @@
 !/deploy/overlays/example/
 /deploy/values/*
 !/deploy/values/example.yaml
+
+# The static demo site built by `make demo-site`.
+/_site/

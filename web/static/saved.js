@@ -4,7 +4,7 @@
 // shows how that run went, with its totals, timeline, "Who answered" strip and
 // log. Nothing is probed and nothing is stored in this mode.
 
-import { readExport, unpackSeries } from './lib/savedrun.mjs';
+import { readExport, unpackSeries, samplePath } from './lib/savedrun.mjs';
 import { createSeries } from './lib/series.mjs';
 import {
   formatDuration, formatLatency, formatPercent, formatClock, formatDateTime,
@@ -26,6 +26,7 @@ export function showSavedRuns() {
   $('#status').hidden = true;
   $('#saved-open').hidden = false;
 
+  showAbout();
   const open = async (file) => {
     if (!file) return;
     let data;
@@ -38,6 +39,24 @@ export function showSavedRuns() {
     if (read.error) return fail(`${file.name}: ${read.error}`);
     show(read, file.name);
   };
+
+  // "?saved=demo/example.json" opens that run straight away: a link to a recording.
+  const named = new URLSearchParams(location.search).get('saved');
+  if (named) {
+    const path = samplePath(named);
+    if (!path) {
+      fail('The run named in the link cannot be opened: it must be a .json file on this site.');
+    } else {
+      fetch(path, { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+        .then((data) => {
+          const read = readExport(data);
+          if (read.error) return fail(`${path}: ${read.error}`);
+          return show(read, path.split('/').pop());
+        })
+        .catch((err) => fail(`${path} could not be loaded (${err.message}).`));
+    }
+  }
   $('#saved-file').addEventListener('change', (event) => open(event.target.files[0]));
   // A file can also be dropped anywhere on the page.
   addEventListener('dragover', (event) => event.preventDefault());
@@ -45,6 +64,25 @@ export function showSavedRuns() {
     event.preventDefault();
     open(event.dataTransfer.files[0]);
   });
+}
+
+// The footer's version and source link come from the server when there is one.
+// Served as plain files, without a server, the page falls back to the source
+// address written into it.
+async function showAbout() {
+  let about = null;
+  try {
+    const res = await fetch('api/config', { cache: 'no-store' });
+    if (res.ok) about = (await res.json()).about;
+  } catch {
+    // No server behind this page.
+  }
+  const source = about?.sourceURL ?? document.querySelector('meta[name="glitchmonitor-source"]')?.content;
+  if (about?.version) $('#version').textContent = `glitchmonitor ${about.version}`;
+  if (source) {
+    $('#source').href = source;
+    $('#source-offer').hidden = false;
+  }
 }
 
 function fail(message) {

@@ -83,6 +83,16 @@ export function formatSpan(sec) {
   return [h ? `${h} h` : '', m ? `${m} min` : '', s ? `${s} s` : ''].filter(Boolean).join(' ');
 }
 
+// samplePath checks the value of "?saved=<path>", which names a run to open
+// straight away. Only a plain relative path to a .json file on the same site is
+// accepted, so a link cannot make the page fetch from somewhere else.
+export function samplePath(value) {
+  const path = String(value ?? '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*\.json$/.test(path)) return null;
+  if (path.includes('..') || path.includes('//')) return null;
+  return path;
+}
+
 // readExport checks that an object is a glitchmonitor export and says what it
 // can show. Returns { error } or { run, hasSeries, start, end } with times in
 // epoch milliseconds.

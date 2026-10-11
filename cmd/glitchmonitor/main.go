@@ -47,6 +47,8 @@ func main() {
 		}
 	case "version":
 		fmt.Println(version)
+	case "notices":
+		os.Stdout.Write(glitchmonitor.ThirdPartyNotices())
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -62,6 +64,7 @@ func usage() {
 commands:
   serve [--config FILE]   serve the dashboard and the probe endpoints
   version                 print the version
+  notices                 print the third-party notices and licence texts
 `)
 }
 
@@ -112,6 +115,7 @@ func serve(args []string) error {
 	srv := server.New(cfg, id, server.About{
 		Version: version, SourceURL: sourceURL,
 		License: glitchmonitor.License, ThirdParty: glitchmonitor.ThirdPartyNotices(),
+		Samples: glitchmonitor.SampleRuns(),
 	}, static, log)
 	if id.Namespace != "" {
 		srv.Internal = startInternalProbes(ctx, cfg, id, log)

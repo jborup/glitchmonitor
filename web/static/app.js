@@ -999,6 +999,13 @@ function wireControls() {
 }
 
 async function main() {
+  // Published as plain files (the demo site), there is nothing to probe: go
+  // straight to the recording the site names.
+  const demo = document.querySelector('meta[name="glitchmonitor-demo"]')?.content;
+  if (demo && !location.search) {
+    location.replace(`?saved=${encodeURIComponent(demo)}`);
+    return;
+  }
   // A saved run is shown by its own code, which never probes anything.
   if (new URLSearchParams(location.search).has('saved')) {
     (await import('./saved.js')).showSavedRuns();

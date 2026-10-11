@@ -38,7 +38,8 @@ func newTestServer(mutate func(*config.Config)) *Server {
 	static := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>glitchmonitor</title>")}}
 	id := Identity{Pod: "glitchmonitor-abc", Node: "node-1", PodIP: "10.128.0.7", Namespace: "glitchmonitor"}
 	about := About{Version: "1.2.3", SourceURL: "https://example.com/src", License: []byte("GNU AFFERO GENERAL PUBLIC LICENSE\n"),
-		ThirdParty: []byte("# Third-party notices\n")}
+		ThirdParty: []byte("# Third-party notices\n"),
+		Samples:    fstest.MapFS{"example.json": {Data: []byte(`{"targets":[]}`)}}}
 	return New(cfg, id, about, static, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
@@ -113,6 +114,13 @@ func TestAboutAndLicense(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "GNU AFFERO GENERAL PUBLIC LICENSE") {
 		t.Errorf("licence body = %q", rec.Body.String())
+	}
+	rec = do(h, "GET", "/demo/example.json", nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "targets") {
+		t.Errorf("GET /demo/example.json = %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := do(h, "GET", "/demo/missing.json", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /demo/missing.json = %d, want 404", rec.Code)
 	}
 	rec = do(h, "GET", "/THIRD-PARTY-NOTICES", nil)
 	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {

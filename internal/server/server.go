@@ -45,6 +45,8 @@ type About struct {
 	License   []byte `json:"-"`
 	// ThirdParty is the notices and licence texts of the components the app includes.
 	ThirdParty []byte `json:"-"`
+	// Samples are the demo recordings served under /demo/, for "?saved=demo/<name>.json"; may be nil.
+	Samples fs.FS `json:"-"`
 }
 
 // InternalReporter is the internal probes of this pod; see internalprobe.Manager.
@@ -83,6 +85,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 	mux.HandleFunc("GET /LICENSE", s.plainText(s.about.License))
 	mux.HandleFunc("GET /THIRD-PARTY-NOTICES", s.plainText(s.about.ThirdParty))
+	if s.about.Samples != nil {
+		mux.Handle("GET /demo/", http.StripPrefix("/demo/", http.FileServerFS(s.about.Samples)))
+	}
 	mux.Handle("/", s.staticFiles())
 	return s.closeWhenTerminating(mux)
 }
