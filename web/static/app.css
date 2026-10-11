@@ -294,6 +294,31 @@ button.danger:hover { border-color: var(--red); }
 #log tr[data-type="internal-outage"] { --type: var(--red); }
 #log tr[data-type="internal-degraded"] { --type: var(--amber); }
 
+.range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 4px; }
+.range form { display: flex; gap: 6px; }
+.range input { padding: 4px 8px; font-size: 13px; }
+.range > button, .range form button { padding: 4px 10px; font-size: 13px; }
+button:disabled { opacity: 0.4; cursor: default; }
+a.button {
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+a.button:hover { border-color: var(--muted); }
+.u-select { background: rgba(88, 166, 255, 0.18); }
+
+/* A saved run: no live controls, and nothing that only makes sense while measuring. */
+.saved-mode .live-only, .saved-mode #sec-inside, .saved-mode .origin:not(#since) { display: none; }
+.saved-open { margin: 0 0 16px; }
+.saved-open h2 { margin: 0; font-size: 18px; }
+.saved-open input { margin: 8px 0; color: var(--text); }
+.sub.error { color: var(--red); }
+.sub.warn { color: var(--amber); }
+
 .legal { margin-top: 32px; color: var(--muted); font-size: 12px; }
 .legal a { color: inherit; }
 

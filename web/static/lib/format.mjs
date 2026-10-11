@@ -35,6 +35,14 @@ export function formatClock(epochMs) {
   return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 }
 
+// formatDateTime: "2026-01-02 03:04:05" in local time, which sorts and cannot
+// be misread the way day/month orders can.
+export function formatDateTime(epochMs) {
+  const d = new Date(epochMs);
+  const two = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${formatClock(epochMs)}`;
+}
+
 // summariseClasses: { timeout: 20, http_5xx: 3 } -> "timeout ×20, http_5xx ×3", most frequent first.
 export function summariseClasses(classes) {
   return Object.entries(classes)

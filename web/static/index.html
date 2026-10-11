@@ -25,8 +25,22 @@
   <main>
     <p id="status" class="status" role="status">Loading configuration…</p>
 
+    <section id="saved-open" class="panel saved-open" hidden>
+      <h2>Show a saved run</h2>
+      <p class="sub">
+        Choose a JSON file exported from this dashboard with "Export all (JSON)", or drop it
+        anywhere on this page. Nothing is measured in this view and the file stays in your browser.
+      </p>
+      <input id="saved-file" type="file" accept="application/json,.json" aria-label="Exported run">
+      <p id="saved-note" class="sub"></p>
+      <p id="saved-no-series" class="sub warn" hidden>
+        This export was made before exports carried the per-second data, so its timeline cannot
+        be shown; the totals and the log can.
+      </p>
+    </section>
+
     <div id="dashboard" hidden>
-      <section class="controls" aria-label="Controls">
+      <section class="controls live-only" aria-label="Controls">
         <button type="button" id="sound" aria-pressed="false">🔇 Enable sound</button>
         <button type="button" id="flash-toggle" aria-pressed="true">⚡ Flash on</button>
         <form id="marker-form">
@@ -35,6 +49,7 @@
           <button type="submit">Add marker</button>
         </form>
         <span class="spacer"></span>
+        <a class="button" href="?saved" target="_blank" rel="noopener">Open a saved run</a>
         <button type="button" id="export-csv">Export log (CSV)</button>
         <button type="button" id="export-json">Export all (JSON)</button>
         <button type="button" id="reset" class="danger">Reset</button>
@@ -79,15 +94,24 @@
         </div>
       </details>
 
-      <details class="fold panel" data-section="timeline" open>
+      <details id="sec-timeline" class="fold panel" data-section="timeline" open>
         <summary><h2>Latency timeline</h2></summary>
-        <header class="row">
-          <p class="sub">
-            Slowest answer from outside in each second. Red bands are outages, grey bands are
-            measurement gaps, dashed lines are your markers.
-          </p>
-          <div id="windows" class="segmented" role="group" aria-label="Time range"></div>
-        </header>
+        <p class="sub">
+          Slowest answer from outside in each second. Red bands are outages, grey bands are
+          measurement gaps, dashed lines are your markers.
+        </p>
+        <div class="range" role="group" aria-label="Time range">
+          <div id="windows" class="segmented"></div>
+          <form id="span-form">
+            <input id="span-text" type="text" size="14" autocomplete="off"
+                   aria-label="Custom time span, from 30 seconds to 6 hours" placeholder="e.g. 90s, 12m, 2h">
+            <button type="submit">Set</button>
+          </form>
+          <button type="button" id="range-back" title="Earlier" aria-label="Earlier">◀</button>
+          <button type="button" id="range-forward" title="Later" aria-label="Later">▶</button>
+          <button type="button" id="range-live" aria-pressed="true">Live</button>
+        </div>
+        <p id="range-label" class="sub"></p>
         <div id="chart"></div>
         <h3>Who answered</h3>
         <p class="sub">
@@ -124,6 +148,12 @@
         is stored on the server: all timers and counters live in this page, so keep it open and
         visible, and do not reload during a test. The log and the counters are also saved in this
         browser every few seconds, so an accidental reload loses the timeline but not the numbers.
+      </p>
+      <p>
+        The timeline keeps the last 6 hours. Choose a preset span or type your own, from 30
+        seconds to 6 hours; step back and forth with the arrows, or drag across the chart to zoom
+        in on a stretch. "Export all (JSON)" saves the whole run, including the per-second data
+        behind the timeline, and "Open a saved run" shows such a file again later.
       </p>
       <p id="thresholds"></p>
       <p id="degraded-off" class="warn" hidden></p>

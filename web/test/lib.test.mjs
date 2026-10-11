@@ -6,8 +6,11 @@ import { createReorder } from '../static/lib/reorder.mjs';
 import { createHistogram, addValue, quantile } from '../static/lib/histogram.mjs';
 import { createSeries, addSample, addRecovered, allRecoveredAt, readSecond } from '../static/lib/series.mjs';
 import {
-  formatDuration, formatLatency, formatPercent, summariseClasses, toCsv,
+  formatDuration, formatLatency, formatPercent, formatDateTime, summariseClasses, toCsv,
 } from '../static/lib/format.mjs';
+import {
+  packSeries, unpackSeries, parseSpan, clampSpan, formatSpan, readExport, MIN_SPAN_SEC, MAX_SPAN_SEC,
+} from '../static/lib/savedrun.mjs';
 import { createEpisodes, addBurst, settle, EPISODE_QUIET_MS } from '../static/lib/episodes.mjs';
 import {
   restoreSession, trimLog, overlapsGap, logToCsv, logDetails, STORAGE_VERSION,
@@ -94,6 +97,7 @@ test('formatting', () => {
   assert.equal(formatPercent(0.999999), '99.999 %', 'never rounds up to 100');
   assert.equal(formatPercent(0.98765432), '98.765 %');
   assert.equal(summariseClasses({ http_5xx: 3, timeout: 20 }), 'timeout ×20, http_5xx ×3');
+  assert.equal(formatDateTime(new Date(2026, 0, 2, 3, 4, 5).getTime()), '2026-01-02 03:04:05');
 });
 
 test('csv quotes only what needs it', () => {
@@ -225,4 +229,68 @@ test('a burst after the quiet time ends the old episode and starts a new one', (
   assert.equal(opened, true);
   assert.deepEqual(closed, { start: 1000, end: 1100, failures: 1, bursts: 1, classes: { timeout: 1 } });
   assert.deepEqual(holder.current, { start: 50_000, end: 50_200, failures: 2, bursts: 1, classes: { timeout: 2 } });
+});
+
+// ---- saved runs ----
+
+test('a series survives being packed into an export and unpacked again', () => {
+  const s = createSeries(100);
+  addSample(s, 1000, { latencyMs: 12.34, nodeIndex: 0 });
+  addSample(s, 1000, { latencyMs: 40.06, nodeIndex: 2 });
+  addSample(s, 1001, { latencyMs: null, nodeIndex: -1 });
+  addRecovered(s, 1001);
+  addSample(s, 1004, { latencyMs: 7, nodeIndex: 31 });
+
+  const packed = JSON.parse(JSON.stringify(packSeries(s)));
+  assert.deepEqual(packed, {
+    start: 1000,
+    maxLatency: [40.1, null, null, null, 7],
+    answers: [2, 0, 0, 0, 1],
+    failures: [0, 1, 0, 0, 0],
+    recovered: [0, 1, 0, 0, 0],
+    nodes: [0b101, 0, 0, 0, 0x80000000],
+  });
+
+  const back = unpackSeries(packed);
+  assert.deepEqual(readSecond(back, 1000), { maxLatency: Math.fround(40.1), answers: 2, failures: 0, recovered: 0, nodes: 0b101 });
+  assert.deepEqual(readSecond(back, 1001), { maxLatency: null, answers: 0, failures: 1, recovered: 1, nodes: 0 });
+  assert.equal(readSecond(back, 1002), null, 'a second without requests stays empty');
+  assert.deepEqual(readSecond(back, 1004).nodes, 0x80000000);
+  assert.equal(back.firstSec, 1000);
+  assert.equal(back.lastSec, 1004);
+  assert.equal(allRecoveredAt(back, 1001), true);
+});
+
+test('packing only covers what the ring still holds', () => {
+  const s = createSeries(10);
+  assert.equal(packSeries(s), null, 'nothing recorded, nothing to pack');
+  for (let sec = 100; sec < 125; sec++) addSample(s, sec, { latencyMs: sec, nodeIndex: 0 });
+  const packed = packSeries(s);
+  assert.equal(packed.start, 115);
+  assert.deepEqual(packed.maxLatency, [115, 116, 117, 118, 119, 120, 121, 122, 123, 124]);
+});
+
+test('time spans as people type them', () => {
+  const cases = { '45s': 45, '10m': 600, '10 min': 600, '2h': 7200, '1h30m': 5400, '1h 30m 15s': 5415, '90': 90, '1.5h': 5400 };
+  for (const [text, want] of Object.entries(cases)) assert.equal(parseSpan(text), want, text);
+  for (const text of ['', 'soon', '5 days', 'h', '-5m']) assert.equal(parseSpan(text), null, text);
+  assert.equal(clampSpan(5), MIN_SPAN_SEC);
+  assert.equal(clampSpan(99999), MAX_SPAN_SEC);
+  assert.equal(clampSpan(754.4), 754);
+  assert.equal(formatSpan(45), '45 s');
+  assert.equal(formatSpan(600), '10 min');
+  assert.equal(formatSpan(5415), '1 h 30 min 15 s');
+  assert.equal(formatSpan(21600), '6 h');
+});
+
+test('reading an export says what can be shown from it', () => {
+  assert.match(readExport(null).error, /not a glitchmonitor export/);
+  assert.match(readExport({ targets: [], log: [] }).error, /not a glitchmonitor export/);
+  const base = { startedAt: '2026-01-02T03:00:00.000Z', exportedAt: '2026-01-02T03:30:00.000Z', log: [] };
+  const old = readExport({ ...base, targets: [{ name: 'route' }] });
+  assert.equal(old.hasSeries, false, 'an export from before the per-second data');
+  assert.equal(old.end - old.start, 30 * 60 * 1000);
+  const full = readExport({ ...base, targets: [{ name: 'route', series: { start: 1, maxLatency: [] } }] });
+  assert.equal(full.hasSeries, true);
+  assert.match(readExport({ ...base, startedAt: 'never', targets: [] }).error, /start and end time/);
 });

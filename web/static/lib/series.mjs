@@ -14,6 +14,8 @@ export function createSeries(capacitySec) {
     failures: new Uint32Array(capacitySec),
     recovered: new Uint32Array(capacitySec),   // of the failures, how many were fine on a retry
     nodes: new Uint32Array(capacitySec),       // bit i set: node i answered
+    firstSec: 0,                               // the earliest and latest second ever recorded
+    lastSec: 0,
   };
 }
 
@@ -28,6 +30,8 @@ export function addSample(s, sec, { latencyMs, nodeIndex }) {
     s.failures[i] = 0;
     s.recovered[i] = 0;
     s.nodes[i] = 0;
+    if (!s.firstSec || sec < s.firstSec) s.firstSec = sec;
+    if (sec > s.lastSec) s.lastSec = sec;
   }
   if (latencyMs == null) {
     s.failures[i]++;

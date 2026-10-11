@@ -15,12 +15,15 @@ import {
   formatDuration, formatLatency, formatPercent, formatClock, summariseClasses,
 } from './lib/format.mjs';
 import {
-  restoreSession, trimLog, overlapsGap, logToCsv, logDetails, STORAGE_VERSION,
+  restoreSession, trimLog, overlapsGap, logToCsv, STORAGE_VERSION,
 } from './lib/session.mjs';
 import {
   createInternalStore, ingest, buildMatrix, assess, cellView, STALE_MS,
 } from './lib/internal.mjs';
-import { createTimeline, WINDOWS, HISTORY_SEC } from './timeline.js';
+import { packSeries, EXPORT_FORMAT } from './lib/savedrun.mjs';
+import { createTimeline, HISTORY_SEC } from './timeline.js';
+import { wireRange } from './rangecontrols.js';
+import { renderLog, sortLog } from './logview.js';
 
 const STORAGE_KEY = 'glitchmonitor.session';
 const PREFS_KEY = 'glitchmonitor.prefs';
@@ -30,7 +33,6 @@ const SAVE_MS = 5000;
 const CONFIG_RETRY_MS = 1000;
 const HEARTBEAT_MS = 250;
 const STALL_MS = 2000;       // a heartbeat this late means the timers were not running
-const LOG_ROWS_SHOWN = 300;
 const MAX_SAVED_PODS = 200;
 const INTERNAL_POLL_MS = 1000;
 const RETRY_ATTRIBUTION_MS = 1000;
@@ -47,20 +49,6 @@ const OLD_MS = 8000;
 // Series colours in fixed order, checked for colour-blind separation on the
 // panel background. They identify a target; green, amber and red mean state.
 const SERIES_COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500'];
-
-const LOG_TYPES = {
-  outage: 'Outage',
-  degraded: 'Degraded',
-  gap: 'Measurement gap',
-  marker: 'Marker',
-  pod: 'New pod',
-  blip: 'Failed requests',
-  'internal-outage': 'Inside: outage',
-  'internal-failing': 'Inside: failing',
-  'internal-degraded': 'Inside: degraded',
-  'internal-requests': 'Inside: failed requests',
-  endpoint: 'Endpoints',
-};
 
 // How the states the pods report map onto tile colours.
 const INTERNAL_STATES = {
@@ -119,6 +107,7 @@ function savePrefs() {
 }
 
 let timeline = null;
+let refreshRange = () => {};
 
 // ---------- log ----------
 
@@ -859,11 +848,14 @@ function download(name, type, text) {
 function exportJson() {
   const t = now();
   const data = {
+    format: EXPORT_FORMAT,
     exportedAt: new Date(t).toISOString(),
     startedAt: new Date(state.startedAt).toISOString(),
     pageOrigin: location.origin,
     userAgent: navigator.userAgent,
     config: state.cfg,
+    // Node names by the bit they have in each series' "nodes" value.
+    nodes: state.nodes,
     targets: state.targets.map((target) => {
       const running = view(target.tracker, t).outageMs ?? 0;
       return {
@@ -880,9 +872,13 @@ function exportJson() {
         retriesSent: target.retries.sent,
         retriesAnswered: target.retries.recovered,
         pods: Object.fromEntries(target.pods),
+        lastFailure: target.lastFailure,
+        // Per second: slowest answer, answers, failures, retries that helped, and
+        // which nodes answered. This is what lets a saved run be shown again.
+        series: packSeries(target.series),
       };
     }),
-    log: sortedLog().map((e) => ({
+    log: sortLog(state.log).map((e) => ({
       ...e,
       start: new Date(e.start).toISOString(),
       end: e.end == null ? null : new Date(e.end).toISOString(),
@@ -932,40 +928,6 @@ function renderTile(target, t) {
   setText($('.last-failure', el), lastFailure ? `${lastFailure.cls}, ${formatAgo(t - lastFailure.at)}` : 'none');
 }
 
-// The log in time order. Entries are not added in that order: what the pods
-// report from the inside arrives a few seconds after it happened.
-function sortedLog() {
-  return [...state.log].sort((a, b) => a.start - b.start || a.id - b.id);
-}
-
-function renderLog(t) {
-  const body = $('#log tbody');
-  const rows = sortedLog().slice(-LOG_ROWS_SHOWN).reverse();
-  body.replaceChildren(...rows.map((e) => {
-    const tr = document.createElement('tr');
-    tr.dataset.type = e.type;
-    const duration = e.open ? `${formatDuration(t - e.start)}, running` : formatDuration(e.durationMs);
-    // What lasted is shown with the time span it happened within.
-    const span = !e.open && e.end != null && e.durationMs >= 1000;
-    const cells = [
-      span ? `${formatClock(e.start)} – ${formatClock(e.end)}` : formatClock(e.start),
-      LOG_TYPES[e.type] ?? e.type,
-      e.target ?? '',
-      e.type === 'marker' || e.type === 'pod' || e.type === 'endpoint' ? '' : duration,
-      logDetails(e),
-    ];
-    for (const text of cells) tr.append(Object.assign(document.createElement('td'), { textContent: text }));
-    return tr;
-  }));
-  const running = state.log.filter((e) => e.open).length;
-  setText($('#log-note'), `${state.log.length} ${state.log.length === 1 ? 'entry' : 'entries'}${running ? `, ${running} running` : ''}`);
-  $('#log-empty').hidden = state.log.length > 0;
-  $('#log').hidden = state.log.length === 0;
-  const hidden = state.log.length - rows.length;
-  $('#log-more').hidden = hidden <= 0;
-  if (hidden > 0) $('#log-more').textContent = `Showing the latest ${rows.length} of ${state.log.length} entries. The exports contain all of them.`;
-}
-
 // renderSlow: once a second, and at once after something the user did.
 function renderSlow() {
   const t = now();
@@ -977,8 +939,9 @@ function renderSlow() {
   }
   closeOrphanedIncidents(t);
   renderInternal(t);
+  refreshRange();
   if (state.logDirty || state.log.some((e) => e.open)) {
-    renderLog(t);
+    renderLog(state.log, t);
     state.logDirty = false;
   }
 }
@@ -1023,7 +986,7 @@ function wireControls() {
   $('#banner-dismiss').addEventListener('click', () => { $('#banner').hidden = true; });
   $('#reset').addEventListener('click', reset);
   $('#export-json').addEventListener('click', exportJson);
-  $('#export-csv').addEventListener('click', () => download('csv', 'text/csv', logToCsv(sortedLog())));
+  $('#export-csv').addEventListener('click', () => download('csv', 'text/csv', logToCsv(sortLog(state.log))));
   $('#marker-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const input = $('#marker-text');
@@ -1032,19 +995,15 @@ function wireControls() {
     renderSlow();
   });
 
-  const windows = $('#windows');
-  WINDOWS.forEach((w, i) => {
-    const button = Object.assign(document.createElement('button'), { type: 'button', textContent: w.label });
-    button.setAttribute('aria-pressed', String(i === 0));
-    button.addEventListener('click', () => {
-      for (const other of windows.children) other.setAttribute('aria-pressed', String(other === button));
-      timeline.setWindow(w.sec);
-    });
-    windows.append(button);
-  });
+  refreshRange = wireRange(timeline, { endName: 'now', endButton: 'Live' });
 }
 
 async function main() {
+  // A saved run is shown by its own code, which never probes anything.
+  if (new URLSearchParams(location.search).has('saved')) {
+    (await import('./saved.js')).showSavedRuns();
+    return;
+  }
   $('#origin').textContent = location.origin;
   loadPrefs();
   state.cfg = await loadConfig();
@@ -1081,6 +1040,7 @@ async function main() {
     stripEl: $('#strip'),
     readoutEl: $('#strip-readout'),
     source: { targets: () => state.targets, log: () => state.log, nodes: () => state.nodes, now },
+    onViewChange: () => refreshRange(),
   });
   describeThresholds();
   wireControls();

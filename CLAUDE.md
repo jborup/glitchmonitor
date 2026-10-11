@@ -145,10 +145,14 @@ counters that accumulate while the page is open.
   - availability %, p50/p99 latency
 - Latency timeline (uPlot) with outage bands, and a pod/node strip showing who answered over time.
   - The timeline holds the slowest answer per second for the last 6 hours, in memory only; it is not saved and is lost on reload.
+  - What it shows is a span and an end: preset spans (5 min, 30 min, 3 h, 6 h) or a typed one from 30 seconds to 6 hours ("90s", "12m", "1h30m"); arrows step back and forth by half a span, dragging across the chart zooms in, and "Live" returns to following the present.
   - The strip has one lane per node for each target, plus a "failed" lane. Lanes are per node, not per pod, because pod names change on every rollout; new pods are announced in the log.
   - Colours: the series colours identify targets and were checked for colour-blind separation; green, amber and red are reserved for state.
 - **Event markers:** a button plus a text field ("MCP rollout start", "node2 power off") that draws a vertical line on the timeline and appears in the log.
+  - A marker is an ordinary log entry of type `marker` with a start time and a text, and is part of the export. So markers can also be added to an export afterwards, for example the exact times a test script powered a node off and on, and the saved-run view draws them like any other. Marker texts that would overlap are stacked on up to six rows.
 - Outage/event log table; export as CSV and JSON.
+  - **The JSON export is a complete record of a run** (`format: 2`): config, totals, the log, the node names, and per target the per-second data behind the timeline and the strip (slowest answer, answers, failures, retries that helped, which nodes answered).
+  - **"Open a saved run"** opens the page with `?saved` in a new tab, so a running measurement is not disturbed. That view takes an export (file picker or drop), never probes or stores anything, and shows the run's totals, timeline, strip and log (`saved.js`). An export from before format 2 shows its totals and log only, and says so. The inside view is a now-view and is not part of a saved run; its log entries are.
 - Save counters and log to `localStorage` periodically so an accidental reload doesn't lose everything. Add a reset button.
 - If `document.visibilityState` becomes hidden, show a warning banner and record a "measurement gap", since browsers throttle timers in background tabs.
   - Timers that stall while the tab is visible (sleep, overloaded browser) and page reloads are logged as measurement gaps too.
@@ -250,8 +254,6 @@ Rules:
 
 ### To do, not yet scheduled
 Ideas agreed as worth doing; decide per item whether it joins M4 or comes later.
-- **Custom time range for the timeline:** any span from 30 seconds to 6 hours, beside the fixed 5 min / 30 min / 3 h / 6 h buttons. Beyond 6 hours can come later, since the timeline only keeps 6 hours.
-- **Open a previous run:** load a JSON export and show how that run went, as a read-only view of the dashboard. Today's export holds the log, the counters and the config but not the per-second data behind the timeline and the "Who answered" strip, so the export has to carry that too before a past run can be shown in full.
 - **Keep listening after a browser timeout:** count the request as timed out as now, but let it run on for up to 30 seconds and record what eventually came back (status and time), to see what the route or gateway would have answered. Proposed, not yet decided.
 
 ## Demo script (for README)
